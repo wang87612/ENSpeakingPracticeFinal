@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Pipecat Session Trace</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font: 13px/1.5 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    margin: 0; padding: 0;
+    background: #0f1117; color: #e5e7eb;
+  }
+  header {
+    position: sticky; top: 0; z-index: 10;
+    background: #161922;
+    border-bottom: 1px solid #2a2f3a;
+    padding: 10px 16px;
+    display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+  }
+  header h1 {
+    margin: 0; font-size: 15px; font-weight: 600; color: #f3f4f6;
+  }
+  .pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 10px; border-radius: 999px; font-size: 11px;
+    background: #2a2f3a; color: #cbd5e1;
+  }
+  .pill.ok    { background: #064e3b; color: #6ee7b7; }
+  .pill.warn  { background: #78350f; color: #fcd34d; }
+  .pill.err   { background: #7f1d1d; color: #fca5a5; }
+  select, button {
+    background: #1f2430; color: #e5e7eb;
+    border: 1px solid #2a2f3a; border-radius: 4px;
+    padding: 4px 10px; font-size: 12px; cursor: pointer;
+  }
+  select:hover, button:hover { background: #2a2f3a; }
+  label { font-size: 12px; color: #94a3b8; display: inline-flex; align-items: center; gap: 6px; }
+  label input[type=checkbox] { accent-color: #60a5fa; }
+  main {
+    padding: 12px 16px 60px;
+    max-width: 1100px; margin: 0 auto;
+  }
+  .event {
+    display: grid;
+    grid-template-columns: 95px 90px 130px 1fr;
+    gap: 10px;
+    align-items: start;
+    padding: 6px 10px;
+    border-left: 3px solid #2a2f3a;
+    border-radius: 0 4px 4px 0;
+    margin-bottom: 4px;
+    background: #161922;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+  }
+  .event .ts { color: #6b7280; white-space: nowrap; }
+  .event .pc { color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .event .stage { color: #cbd5e1; font-weight: 600; white-space: nowrap; }
+  .event .body { color: #e5e7eb; word-break: break-word; }
+  .event .body .small { color: #94a3b8; font-size: 11px; }
+  .event .body details { margin-top: 4px; }
+  .event .body summary { cursor: pointer; color: #94a3b8; font-size: 11px; user-select: none; }
+  .event .body pre {
+    margin: 6px 0 0; padding: 8px;
+    background: #0b0e15; color: #d1d5db;
+    border-radius: 4px;
+    white-space: pre-wrap; word-break: break-word;
+    font-size: 11px; max-height: 320px; overflow: auto;
+  }
+  /* per-stage colors */
+  .ev-session       { border-left-color: #6b7280; }
+  .ev-session .stage{ color: #9ca3af; }
+  .ev-client        { border-left-color: #6b7280; }
+  .ev-client .stage { color: #9ca3af; }
+  .ev-stt           { border-left-color: #38bdf8; }
+  .ev-stt .stage    { color: #7dd3fc; }
+  .ev-stt .body     { color: #bae6fd; }
+  .ev-llm-in        { border-left-color: #a78bfa; }
+  .ev-llm-in .stage { color: #c4b5fd; }
+  .ev-llm-out       { border-left-color: #34d399; }
+  .ev-llm-out .stage{ color: #6ee7b7; }
+  .ev-llm-out .body { color: #d1fae5; }
+  .ev-tts           { border-left-color: #fb923c; }
+  .ev-tts .stage    { color: #fdba74; }
+  .ev-tts .body     { color: #fed7aa; }
+  .ev-err           { border-left-color: #f87171; background: #1a1116; }
+  .ev-err .stage    { color: #fca5a5; }
+  .ev-err .body     { color: #fecaca; }
+  .ev-meta          { color: #94a3b8; }
+  .ev-meta .body    { color: #94a3b8; font-style: italic; }
+  hr.divider {
+    border: 0; border-top: 1px dashed #2a2f3a;
+    margin: 14px 0 6px;
+  }
+  .empty {
+    text-align: center; padding: 60px 20px; color: #6b7280;
+  }
+  .role-system    { color: #94a3b8; }
+  .role-user      { color: #93c5fd; }
+  .role-assistant { color: #6ee7b7; }
+  .role-tag {
+    display: inline-block; padding: 1px 6px; border-radius: 3px;
+    background: #1f2430; color: #cbd5e1; font-size: 10px;
+    margin-right: 6px; vertical-align: middle;
+  }
+  kbd {
+    background: #2a2f3a; padding: 1px 5px; border-radius: 3px;
+    font-size: 11px; color: #cbd5e1; border: 1px solid #3a4150;
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Pipecat Session Trace</h1>
+  <span class="pill" id="conn">未连接</span>
+  <label>
+    Session：
+    <select id="pc_filter">
+      <option value="">所有 session</option>
+    </select>
+  </label>
+  <label><input type="checkbox" id="auto_scroll" checked /> 自动滚动</label>
+  <label><input type="checkbox" id="show_meta" checked /> 显示连接事件</label>
+  <button id="refresh_sessions">刷新 session 列表</button>
+  <button id="clear">清空</button>
+  <span class="pill" id="counter">0 events</span>
+  <span style="margin-left:auto; color:#6b7280; font-size:11px">
+    数据来自 <code>/api/trace/stream</code> · <kbd>Ctrl+End</kbd> 跳到底部
+  </span>
+</header>
+<main id="list">
+  <div class="empty" id="empty">还没有事件。等待对话开始……</div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const list = $('list');
+const empty = $('empty');
+let es = null;
+let count = 0;
+let lastPc = null;
+
+function fmtTs(iso) {
+  // iso: 2026-05-28T18:25:01.123+08:00
+  const m = String(iso).match(/T(\d{2}:\d{2}:\d{2}\.\d{3})/);
+  return m ? m[1] : iso;
+}
+function shortPc(pc) {
+  if (!pc || pc === '-') return '-';
+  return pc.length > 10 ? pc.slice(0, 8) + '…' : pc;
+}
+function escapeHtml(s) {
+  return String(s ?? '')
+    .replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;')
+    .replaceAll('"','&quot;').replaceAll("'",'&#039;');
+}
+function stageClass(stage) {
+  if (stage === 'session.start' || stage === 'session.end') return 'ev-session';
+  if (stage.startsWith('client.')) return 'ev-client';
+  if (stage.startsWith('stt'))     return stage.endsWith('.err') ? 'ev-stt ev-err' : 'ev-stt';
+  if (stage === 'llm.in')          return 'ev-llm-in';
+  if (stage.startsWith('llm.'))    return stage.endsWith('.error') ? 'ev-llm-out ev-err' : 'ev-llm-out';
+  if (stage.startsWith('tts'))     return stage.endsWith('.err')   ? 'ev-tts ev-err'    : 'ev-tts';
+  if (stage === 'trace.error')     return 'ev-err';
+  return 'ev-meta';
+}
+function isMeta(stage) {
+  return stage === 'session.start' || stage === 'session.end'
+      || stage === 'client.connected' || stage === 'client.disconnected';
+}
+
+function renderBody(evt) {
+  const s = evt.stage;
+  if (s === 'session.start') {
+    return `<div class="small">model=${escapeHtml(evt.qwen_model||'')} · greeting=${escapeHtml(evt.greeting||'')}</div>`
+      + (evt.system_prompt
+          ? `<details><summary>system_prompt (${evt.system_prompt.length} chars)</summary><pre>${escapeHtml(evt.system_prompt)}</pre></details>`
+          : '');
+  }
+  if (s === 'session.end' || s === 'client.connected' || s === 'client.disconnected') return '';
+  if (s === 'stt' || s === 'stt.timing') {
+    let extra = '';
+    if (evt.elapsed_sec != null) extra += ` <span class="small">funasr ${evt.elapsed_sec}s</span>`;
+    if (evt.audio_bytes != null) extra += ` <span class="small">${evt.audio_bytes}B</span>`;
+    return `🗣  ${escapeHtml(evt.text || '')}${extra}`;
+  }
+  if (s === 'stt.in')    return `<span class="small">audio in: ${evt.audio_bytes}B (${escapeHtml(evt.language||'')})</span>`;
+  if (s === 'stt.empty') return `<span class="small">empty result · ${evt.audio_bytes||'?'}B · ${evt.elapsed_sec||'?'}s</span>`;
+  if (s === 'stt.err')   return `❌ ${escapeHtml(evt.error || ('status=' + evt.status))}`;
+  if (s === 'llm.in') {
+    const msgs = evt.messages || [];
+    const last = msgs[msgs.length - 1];
+    const preview = last
+      ? `<span class="role-${last.role||'?'}"><span class="role-tag">${last.role}</span>${escapeHtml(last.content||'')}</span>`
+      : '(empty)';
+    let det = '';
+    if (msgs.length > 1) {
+      det = `<details><summary>完整上下文 (${msgs.length} 条)</summary><pre>${
+        msgs.map(m => `<span class="role-${m.role||'?'}"><span class="role-tag">${m.role}</span>${escapeHtml(m.content||'')}</span>`).join('\n\n')
+      }</pre></details>`;
+    }
+    return `→ LLM &nbsp; ${preview}${det}`;
+  }
+  if (s === 'llm.start') return `<span class="small">streaming…</span>`;
+  if (s === 'llm.end')   {
+    const lat = evt.latency_sec != null ? ` <span class="small">${evt.latency_sec}s</span>` : '';
+    return `🤖 ${escapeHtml(evt.text || '')}${lat}`;
+  }
+  if (s === 'tts.in')    return `🔊 ${escapeHtml(evt.text || '')}`;
+  if (s === 'tts.out')   {
+    const lat = evt.latency_sec != null ? ` <span class="small">${evt.latency_sec}s</span>` : '';
+    const b = evt.audio_bytes != null ? ` <span class="small">${evt.audio_bytes}B</span>` : '';
+    return `✓ tts done${lat}${b}`;
+  }
+  if (s === 'tts.err')   {
+    const lat = evt.latency_sec != null ? ` <span class="small">${evt.latency_sec}s</span>` : '';
+    return `❌ ${escapeHtml(evt.error || ('status=' + evt.status))}${lat}<details><summary>text</summary><pre>${escapeHtml(evt.text||'')}</pre></details>`;
+  }
+  // unknown — dump as JSON
+  const known = new Set(['t','pc','stage']);
+  const rest = {};
+  for (const k of Object.keys(evt)) if (!known.has(k)) rest[k] = evt[k];
+  return `<pre>${escapeHtml(JSON.stringify(rest, null, 2))}</pre>`;
+}
+
+function appendEvent(evt) {
+  if (!$('show_meta').checked && isMeta(evt.stage)) return;
+  if (empty) empty.style.display = 'none';
+
+  // session boundary divider
+  if (lastPc !== null && evt.pc !== lastPc) {
+    const hr = document.createElement('hr');
+    hr.className = 'divider';
+    list.appendChild(hr);
+  }
+  lastPc = evt.pc;
+
+  const div = document.createElement('div');
+  div.className = 'event ' + stageClass(evt.stage);
+  div.innerHTML =
+      `<div class="ts">${escapeHtml(fmtTs(evt.t))}</div>`
+    + `<div class="pc" title="${escapeHtml(evt.pc)}">${escapeHtml(shortPc(evt.pc))}</div>`
+    + `<div class="stage">${escapeHtml(evt.stage)}</div>`
+    + `<div class="body">${renderBody(evt)}</div>`;
+  list.appendChild(div);
+
+  count++;
+  $('counter').textContent = count + ' events';
+
+  if ($('auto_scroll').checked) {
+    window.scrollTo({ top: document.body.scrollHeight });
+  }
+}
+
+function setConn(state, cls='') {
+  $('conn').textContent = state;
+  $('conn').className = 'pill ' + cls;
+}
+
+function openStream() {
+  if (es) { es.close(); es = null; }
+  const pc = $('pc_filter').value;
+  const url = '/api/trace/stream' + (pc ? ('?pc_id=' + encodeURIComponent(pc)) : '');
+  setConn('连接中…', 'warn');
+  es = new EventSource(url);
+  es.onopen = () => setConn('● 已连接', 'ok');
+  es.onmessage = (e) => {
+    try {
+      const evt = JSON.parse(e.data);
+      appendEvent(evt);
+    } catch (err) {
+      console.error('bad event', err, e.data);
+    }
+  };
+  es.onerror = () => {
+    setConn('● 已断开（自动重连）', 'err');
+  };
+}
+
+async function loadSessions() {
+  try {
+    const r = await fetch('/api/trace/sessions');
+    const j = await r.json();
+    const sel = $('pc_filter');
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">所有 session</option>';
+    for (const s of j.sessions) {
+      const opt = document.createElement('option');
+      opt.value = s.pc_id;
+      const tag = s.active ? ' ●' : '';
+      opt.textContent = `${s.pc_id.slice(0, 8)}${tag}  (${(s.size/1024).toFixed(1)}KB)`;
+      sel.appendChild(opt);
+    }
+    sel.value = cur;
+  } catch (e) {
+    console.error('loadSessions', e);
+  }
+}
+
+function clearList() {
+  list.innerHTML = '<div class="empty" id="empty">已清空。</div>';
+  empty.parentElement; // no-op
+  count = 0;
+  lastPc = null;
+  $('counter').textContent = '0 events';
+}
+
+$('pc_filter').addEventListener('change', () => { clearList(); openStream(); });
+$('refresh_sessions').addEventListener('click', loadSessions);
+$('clear').addEventListener('click', clearList);
+$('show_meta').addEventListener('change', () => { /* applies to future events; nothing else to do */ });
+
+loadSessions().then(openStream);
+// refresh session dropdown periodically
+setInterval(loadSessions, 10000);
+</script>
+</body>
+</html>

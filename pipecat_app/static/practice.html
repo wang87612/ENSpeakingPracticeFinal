@@ -1,0 +1,822 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>英语口语练习</title>
+<style>
+*{box-sizing:border-box}
+body{font:14px/1.6 -apple-system,Segoe UI,Helvetica,Arial,sans-serif;max-width:760px;margin:24px auto;padding:0 16px;color:#334155;background:#f8fafc}
+h1{font-size:20px;margin:0 0 4px;color:#1e293b;font-weight:600}
+h2{font-size:16px;margin:0 0 10px;color:#334155;font-weight:600}
+h3{font-size:13px;color:#64748b;margin:0 0 8px;font-weight:500}
+.desc{color:#64748b;font-size:13px;margin-bottom:18px}
+
+.header-bar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:18px;flex-wrap:wrap}
+.header-bar h1{flex:1;min-width:0}
+.header-actions{display:flex;gap:8px;flex-wrap:wrap}
+.header-actions button{padding:7px 12px;border:1px solid #e2e8f0;background:#fff;border-radius:6px;font-size:13px;cursor:pointer;color:#334155;font-weight:500}
+.header-actions button:hover{background:#f1f5f9}
+.header-actions button.primary,
+.header-actions button.active{background:#2563eb;color:#fff;border-color:#2563eb}
+.header-actions button.primary:hover,
+.header-actions button.active:hover{background:#1d4ed8;border-color:#1d4ed8}
+.header-actions button.active{cursor:default;box-shadow:0 1px 2px rgba(37,99,235,.18)}
+
+.settings{background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:16px;margin-bottom:16px}
+.opt-row{display:flex;gap:12px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
+.opt-row label{font-size:13px;color:#475569;cursor:pointer}
+.opt-row input[type=radio]{margin-right:3px}
+.opt-row select{padding:5px 8px;border:1px solid #e2e8f0;border-radius:4px;font-size:13px;color:#334155;background:#fff;width:240px;max-width:100%}
+.scenario-desc{font-size:12px;color:#64748b;margin:4px 0 0 72px;line-height:1.5}
+
+.controls{display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap}
+button{padding:9px 16px;border:none;border-radius:6px;font-size:13px;cursor:pointer;font-weight:500;font-family:inherit}
+.btn-start{background:#2563eb;color:#fff}
+.btn-start:hover{background:#1d4ed8}
+.btn-start:disabled{background:#94a3b8;cursor:not-allowed}
+.btn-stop{background:#dc2626;color:#fff}
+.btn-stop:hover{background:#b91c1c}
+.btn-mute{background:#e2e8f0;color:#334155}
+.btn-mute:hover{background:#cbd5e1}
+.btn-mute.active{background:#fde68a;color:#92400e}
+
+.transcript{display:flex;flex-direction:column;gap:12px;max-height:520px;overflow-y:auto;padding:12px;margin-bottom:16px;border:1px solid #e2e8f0;border-radius:8px;background:#fff}
+.msg-row{display:flex;align-items:flex-start;gap:8px}
+.msg-row.user{flex-direction:row-reverse}
+.avatar{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;margin-top:2px}
+.avatar.user-avatar{background:#dbeafe;color:#2563eb}
+.avatar.bot-avatar{background:#f1f5f9;color:#475569}
+.msg{max-width:80%;padding:10px 14px;border-radius:12px;line-height:1.6}
+.msg.user{background:#2563eb;color:#fff;border-bottom-right-radius:3px}
+.msg.bot{background:#fff;border:1px solid #e2e8f0;border-bottom-left-radius:3px;color:#334155}
+.msg .en{font-size:13px}
+.msg .zh{font-size:12px;color:#64748b;margin-top:4px;border-top:1px solid #f1f5f9;padding-top:4px;line-height:1.5}
+.msg.user .zh{color:#bfdbfe;border-top-color:rgba(255,255,255,.2)}
+
+.blur .msg .en,.blur .msg .zh{filter:blur(5px);transition:filter .2s}
+.blur .msg:hover .en,.blur .msg:hover .zh{filter:none}
+.hide-sub .msg .en,.hide-sub .msg .zh{display:none}
+.en-only .msg .zh{display:none}
+
+.replay-btn{display:inline-flex;align-items:center;gap:4px;margin-top:6px;padding:3px 8px;border-radius:4px;background:#f1f5f9;border:1px solid #e2e8f0;font-size:12px;color:#475569;cursor:pointer;font-family:inherit}
+.replay-btn:hover{background:#e2e8f0}
+.replay-btn.loading{opacity:.5;pointer-events:none}
+
+.suggestions{margin-bottom:16px}
+.chips{display:flex;flex-direction:column;gap:8px}
+.chip{padding:10px 12px;background:#fff;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;color:#334155;line-height:1.5}
+.chip .chip-en{font-size:13px;color:#334155}
+.chip .chip-zh{font-size:12px;color:#64748b;margin-top:3px;line-height:1.5}
+.suggestions.loading .chips::before{content:'正在生成提示...';color:#94a3b8;font-size:12px;font-style:italic}
+
+.empty{color:#94a3b8;text-align:center;padding:40px 0;font-size:13px}
+
+/* History table */
+.history-card{background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-bottom:16px}
+.history-table{width:100%;border-collapse:collapse;font-size:13px}
+.history-table th{text-align:left;color:#64748b;font-weight:500;font-size:12px;padding:8px 10px;border-bottom:1px solid #e2e8f0;background:#f8fafc}
+.history-table td{padding:10px;border-bottom:1px solid #f1f5f9;vertical-align:top;color:#475569}
+.history-table tr:last-child td{border-bottom:none}
+.history-table .col-time{white-space:nowrap}
+.history-table .col-settings{font-size:13px;line-height:1.5}
+.history-table .col-score{font-weight:600;color:#1d4ed8;text-align:center;white-space:nowrap}
+.history-table .col-action{text-align:right;white-space:nowrap}
+.history-table .view-btn{padding:5px 12px;background:#fff;border:1px solid #2563eb;color:#2563eb;border-radius:5px;font-size:12px;cursor:pointer;font-family:inherit;font-weight:500}
+.history-table .view-btn:hover{background:#eff6ff}
+.history-empty{color:#94a3b8;text-align:center;padding:40px 12px;font-size:13px}
+
+/* Detail view */
+.detail-meta{background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:14px;margin-bottom:14px;font-size:13px;color:#475569;line-height:1.7}
+.detail-meta .label{display:inline-block;min-width:84px;color:#64748b}
+
+/* Summary card */
+.summary-card{background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:14px;margin-bottom:14px}
+.summary-score{display:inline-block;padding:4px 10px;border-radius:12px;background:#dbeafe;color:#1d4ed8;font-weight:600;font-size:13px;margin-bottom:8px}
+.summary-text{font-size:13px;color:#334155;line-height:1.7;margin-bottom:12px}
+.tip{background:#f8fafc;border:1px solid #e2e8f0;border-left:3px solid #2563eb;border-radius:6px;padding:10px 12px;margin-bottom:8px;font-size:13px;line-height:1.6}
+.tip .tip-original{color:#64748b;text-decoration:line-through;margin-bottom:4px}
+.tip .tip-issue{color:#92400e;font-size:12px;margin-bottom:4px;line-height:1.5}
+.tip .tip-better{color:#166534;font-weight:500}
+.tip .tip-better::before{content:'✓ ';color:#16a34a}
+.summary-loading{color:#94a3b8;font-size:13px;font-style:italic;padding:12px 0}
+
+audio{display:none}
+</style>
+</head>
+<body>
+
+<div class="header-bar">
+  <h1>英语口语练习</h1>
+  <div class="header-actions">
+    <button id="btn_view_setup">开始对话</button>
+    <button id="btn_view_history" class="active">查看历史</button>
+  </div>
+</div>
+
+<!-- ============= VIEW: history list ============= -->
+<div id="view_history">
+  <div class="history-card">
+    <div id="history_table_wrap">
+      <div class="history-empty">加载中...</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============= VIEW: setup + live conversation ============= -->
+<div id="view_setup" style="display:none">
+  <div class="settings" id="settings_panel">
+    <h2>⚙ 设置</h2>
+    <div class="opt-row">
+      <span style="font-size:13px;color:#334155;font-weight:500;min-width:60px">场景：</span>
+      <select id="scenario_select"><option value="">加载中...</option></select>
+    </div>
+    <div class="opt-row" style="margin-top:10px">
+      <span style="font-size:13px;color:#334155;font-weight:500;min-width:60px">音色：</span>
+      <select id="voice_select"><option value="">加载中...</option></select>
+    </div>
+    <div class="opt-row">
+      <span style="font-size:13px;color:#334155;font-weight:500;min-width:60px">语速：</span>
+      <label><input type="radio" name="speed" value="0.5"> 0.5x</label>
+      <label><input type="radio" name="speed" value="1" checked> 1.0x</label>
+      <label><input type="radio" name="speed" value="1.5"> 1.5x</label>
+    </div>
+    <div class="opt-row">
+      <span style="font-size:13px;color:#334155;font-weight:500;min-width:60px">字幕：</span>
+      <label><input type="radio" name="sub" value="en-zh" checked> 英文 + 中文</label>
+      <label><input type="radio" name="sub" value="en"> 仅英文</label>
+      <label><input type="radio" name="sub" value="none"> 隐藏字幕</label>
+    </div>
+    <div class="opt-row">
+      <span style="font-size:13px;color:#334155;font-weight:500;min-width:60px">显示：</span>
+      <label><input type="radio" name="blur" value="show" checked> 常驻显示</label>
+      <label><input type="radio" name="blur" value="blur"> 模糊化（悬停显示）</label>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button class="btn-start" id="btn_start">▶ 开始</button>
+    <button class="btn-stop" id="btn_stop" style="display:none">■ 结束会话</button>
+    <button class="btn-mute" id="btn_mute" style="display:none">🎤 静音</button>
+  </div>
+
+  <div id="transcript_section" style="display:none">
+  <h3>📋 对话记录</h3>
+  <div id="transcript" class="transcript">
+    <div class="empty"></div>
+  </div>
+  </div>
+
+  <div class="suggestions" id="suggestions" style="display:none">
+    <h3>💡 回复提示</h3>
+    <div class="chips" id="chips"></div>
+  </div>
+
+  <!-- Inline post-session summary, shown after stopping. -->
+  <div id="post_summary" style="display:none">
+    <h2>📝 本次对话总结</h2>
+    <div class="summary-card" id="post_summary_card">
+      <div class="summary-loading">正在生成总结，请稍候...</div>
+    </div>
+    <div class="controls">
+      <button class="primary" id="btn_back_to_history" style="background:#2563eb;color:#fff">返回历史记录</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============= VIEW: session detail (read-only) ============= -->
+<div id="view_detail" style="display:none">
+  <div class="detail-meta" id="detail_meta"></div>
+  <div class="summary-card" id="detail_summary_card"></div>
+  <h2>📋 对话内容</h2>
+  <div id="detail_transcript" class="transcript"></div>
+  <div class="controls">
+    <button id="btn_detail_back">← 返回历史记录</button>
+  </div>
+</div>
+
+<audio id="remote_audio" autoplay playsinline></audio>
+
+<script>
+const $ = id => document.getElementById(id);
+const transcriptEl = $('transcript');
+const chipsEl = $('chips');
+const suggestionsEl = $('suggestions');
+const scenarioSelect = $('scenario_select');
+
+let currentScenario = null;
+let sessionStartTs = null;
+
+// --------------- Prompt debug logging ---------------
+// Pretty-print prompt blocks to the browser console so you can see exactly
+// what each Qwen call receives. Group is collapsed by default to keep the
+// console tidy.
+function logPrompt(label, prompts, extra) {
+  if (!prompts) return;
+  console.group('%c[prompt] ' + label, 'color:#2563eb;font-weight:600');
+  if (prompts.system) {
+    console.log('%csystem%c\n' + prompts.system, 'color:#64748b;font-weight:600', '');
+  }
+  if (prompts.user) {
+    console.log('%cuser%c\n' + prompts.user, 'color:#64748b;font-weight:600', '');
+  }
+  if (extra) console.log('extra:', extra);
+  console.groupEnd();
+}
+
+// Fetch the static prompt templates once on page load and dump them to the
+// console for inspection.
+console.log('%c✅ Prompt logging enabled', 'background:#dbeafe;color:#1d4ed8;padding:3px 8px;border-radius:4px;font-weight:700');
+console.log('%c打开下面分组查看：static templates / 每次 suggestions / 每次 summary 的 system+user prompt', 'color:#64748b');
+console.log('随时可在控制台输入 dumpPrompts() 重新打印一次模板');
+
+// Manual helper: call dumpPrompts() in the console any time.
+window.dumpPrompts = async function() {
+  try {
+    const r = await fetch('/api/debug/prompts');
+    const j = await r.json();
+    console.group('%c[prompts] static templates (manual dump)', 'color:#1d4ed8;font-weight:700');
+    console.log('Qwen base url :', j.qwen_base_url);
+    console.log('Qwen model    :', j.qwen_model);
+    console.log('%ctranslate.system%c\n' + j.translate_system, 'color:#64748b;font-weight:600', '');
+    console.log('%csuggestions.system%c\n' + j.suggestions_system, 'color:#64748b;font-weight:600', '');
+    console.log('%csummary.system%c\n' + j.summary_system, 'color:#64748b;font-weight:600', '');
+    console.groupEnd();
+    return j;
+  } catch (e) { console.error('dumpPrompts failed:', e); }
+};
+
+fetch('/api/debug/prompts').then(r => r.json()).then(j => {
+  console.group('%c[prompts] static templates', 'color:#1d4ed8;font-weight:700');
+  console.log('Qwen base url :', j.qwen_base_url);
+  console.log('Qwen model    :', j.qwen_model);
+  console.log('%ctranslate.system%c\n' + j.translate_system, 'color:#64748b;font-weight:600', '');
+  console.log('%csuggestions.system%c\n' + j.suggestions_system, 'color:#64748b;font-weight:600', '');
+  console.log('%csummary.system%c\n' + j.summary_system, 'color:#64748b;font-weight:600', '');
+  console.groupEnd();
+}).catch(()=>{});
+
+// --------------- View switching ---------------
+function showView(name) {
+  $('view_history').style.display = name === 'history' ? '' : 'none';
+  $('view_setup').style.display = name === 'setup' ? '' : 'none';
+  $('view_detail').style.display = name === 'detail' ? '' : 'none';
+  // Highlight the header nav button that matches the current view.
+  // Detail is reached from the history list, so it stays under "查看历史".
+  const setupActive = (name === 'setup');
+  const historyActive = (name === 'history' || name === 'detail');
+  $('btn_view_setup').classList.toggle('active', setupActive);
+  $('btn_view_history').classList.toggle('active', historyActive);
+  if (name === 'history') loadHistory();
+}
+
+$('btn_view_setup').onclick = () => {
+  // Reset any leftover post-session UI when entering setup view.
+  $('post_summary').style.display = 'none';
+  $('transcript_section').style.display = 'none';
+  $('settings_panel').style.display = '';
+  $('btn_start').style.display = '';
+  $('btn_start').disabled = false;
+  $('btn_stop').style.display = 'none';
+  $('btn_mute').style.display = 'none';
+  transcriptEl.innerHTML = '<div class="empty"></div>';
+  suggestionsEl.style.display = 'none';
+  showView('setup');
+};
+$('btn_view_history').onclick = () => showView('history');
+$('btn_back_to_history').onclick = () => showView('history');
+$('btn_detail_back').onclick = () => showView('history');
+
+// --------------- History list ---------------
+function fmtTime(iso) {
+  if (!iso) return '-';
+  try {
+    const d = new Date(iso);
+    const pad = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  } catch { return iso; }
+}
+
+function fmtSettings(s, scenarioName) {
+  s = s || {};
+  const parts = [];
+  if (scenarioName) parts.push(`场景：${scenarioName}`);
+  if (s.voice_name || s.voice_id) parts.push(`音色：${s.voice_name || s.voice_id}`);
+  if (s.lang) parts.push(`语言：${s.lang === 'zh' ? '中文' : 'English'}`);
+  if (s.speed != null) parts.push(`语速：${s.speed}x`);
+  if (s.subtitle) {
+    const map = {'en-zh':'英文+中文','en':'仅英文','none':'隐藏'};
+    parts.push(`字幕：${map[s.subtitle] || s.subtitle}`);
+  }
+  if (s.blur) parts.push(`显示：${s.blur === 'blur' ? '模糊' : '常驻'}`);
+  return parts.join(' · ') || '-';
+}
+
+async function loadHistory() {
+  const wrap = $('history_table_wrap');
+  wrap.innerHTML = '<div class="history-empty">加载中...</div>';
+  try {
+    const r = await fetch('/api/sessions');
+    const j = await r.json();
+    const rows = j.sessions || [];
+    if (!rows.length) {
+      wrap.innerHTML = '<div class="history-empty">暂无对话记录。点击右上角"开始新对话"开始练习。</div>';
+      return;
+    }
+    const table = document.createElement('table');
+    table.className = 'history-table';
+    table.innerHTML = `
+      <thead><tr>
+        <th class="col-time">时间</th>
+        <th>场景</th>
+        <th class="col-score">得分</th>
+        <th class="col-action"></th>
+      </tr></thead>
+      <tbody></tbody>`;
+    const tbody = table.querySelector('tbody');
+    rows.forEach(s => {
+      const tr = document.createElement('tr');
+      const tdTime = document.createElement('td');
+      tdTime.className = 'col-time';
+      tdTime.textContent = fmtTime(s.created_at);
+      const tdScenario = document.createElement('td');
+      tdScenario.className = 'col-settings';
+      tdScenario.textContent = s.scenario_name || '—';
+      const tdScore = document.createElement('td');
+      tdScore.className = 'col-score';
+      tdScore.textContent = (s.score == null) ? '—' : (s.score + '/10');
+      const tdAct = document.createElement('td');
+      tdAct.className = 'col-action';
+      const btn = document.createElement('button');
+      btn.className = 'view-btn';
+      btn.textContent = '查看';
+      btn.onclick = () => openDetail(s.id);
+      tdAct.appendChild(btn);
+      tr.append(tdTime, tdScenario, tdScore, tdAct);
+      tbody.appendChild(tr);
+    });
+    wrap.innerHTML = '';
+    wrap.appendChild(table);
+  } catch (e) {
+    wrap.innerHTML = '<div class="history-empty">加载失败</div>';
+  }
+}
+
+// --------------- Detail view ---------------
+function renderSummaryCard(card, summary) {
+  card.innerHTML = '';
+  if (!summary) {
+    card.innerHTML = '<div class="summary-loading">无总结数据</div>';
+    return;
+  }
+  if (summary.score != null) {
+    const scoreEl = document.createElement('div');
+    scoreEl.className = 'summary-score';
+    scoreEl.textContent = `综合评分 ${summary.score}/10`;
+    card.appendChild(scoreEl);
+  }
+  if (summary.summary) {
+    const txt = document.createElement('div');
+    txt.className = 'summary-text';
+    txt.textContent = summary.summary;
+    card.appendChild(txt);
+  }
+  const tips = summary.grammar_tips || [];
+  if (tips.length) {
+    const head = document.createElement('h3');
+    head.textContent = '💡 改进建议（更简单实用的说法）';
+    head.style.marginTop = '12px';
+    card.appendChild(head);
+    tips.forEach(t => {
+      const tipEl = document.createElement('div');
+      tipEl.className = 'tip';
+      if (t.original) {
+        const o = document.createElement('div');
+        o.className = 'tip-original';
+        o.textContent = t.original;
+        tipEl.appendChild(o);
+      }
+      if (t.issue) {
+        const i = document.createElement('div');
+        i.className = 'tip-issue';
+        i.textContent = t.issue;
+        tipEl.appendChild(i);
+      }
+      if (t.better) {
+        const b = document.createElement('div');
+        b.className = 'tip-better';
+        b.textContent = t.better;
+        tipEl.appendChild(b);
+      }
+      card.appendChild(tipEl);
+    });
+  } else if (summary.raw) {
+    const pre = document.createElement('pre');
+    pre.style.cssText = 'white-space:pre-wrap;font-size:12px;color:#64748b;background:#f8fafc;padding:8px;border-radius:6px';
+    pre.textContent = summary.raw;
+    card.appendChild(pre);
+  }
+}
+
+function renderDetailTranscript(messages) {
+  const root = $('detail_transcript');
+  root.innerHTML = '';
+  (messages || []).forEach(m => {
+    const div = document.createElement('div');
+    div.className = 'msg ' + (m.role === 'user' ? 'user' : 'bot');
+    const en = document.createElement('div');
+    en.className = 'en';
+    en.textContent = m.content;
+    div.appendChild(en);
+    root.appendChild(div);
+  });
+}
+
+async function openDetail(id) {
+  showView('detail');
+  $('detail_meta').textContent = '加载中...';
+  $('detail_summary_card').innerHTML = '<div class="summary-loading">加载中...</div>';
+  $('detail_transcript').innerHTML = '';
+  try {
+    const r = await fetch('/api/sessions/' + encodeURIComponent(id));
+    if (!r.ok) throw 0;
+    const s = await r.json();
+    const meta = $('detail_meta');
+    meta.innerHTML = '';
+    const rows = [
+      ['时间', fmtTime(s.created_at)],
+      ['设置', fmtSettings(s.settings, s.scenario_name)],
+      ['消息数', (s.messages || []).length],
+    ];
+    if (s.duration_secs) rows.push(['时长', Math.round(s.duration_secs) + ' 秒']);
+    rows.forEach(([k, v]) => {
+      const d = document.createElement('div');
+      d.innerHTML = `<span class="label">${k}：</span><span>${v}</span>`;
+      meta.appendChild(d);
+    });
+    renderSummaryCard($('detail_summary_card'), s.summary);
+    logPrompt('session summary (saved id=' + id + ')', s.summary && s.summary.prompts, {score: s.summary && s.summary.score});
+    renderDetailTranscript(s.messages);
+  } catch (e) {
+    $('detail_meta').textContent = '加载失败';
+  }
+}
+
+// --------------- Voices ---------------
+async function loadVoices() {
+  const sel = $('voice_select');
+  try {
+    const r = await fetch('/api/voices');
+    const j = await r.json();
+    sel.innerHTML = '';
+    (j.voices || []).forEach(v => {
+      const opt = document.createElement('option');
+      opt.value = v.id;
+      opt.textContent = v.name;
+      sel.appendChild(opt);
+    });
+  } catch { sel.innerHTML = '<option value="">加载失败</option>'; }
+}
+function getVoice() { return $('voice_select').value; }
+function getVoiceName() {
+  const sel = $('voice_select');
+  return sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].textContent : '';
+}
+loadVoices();
+
+// --------------- Scenarios ---------------
+async function loadScenarios() {
+  try {
+    const r = await fetch('/api/scenarios');
+    const j = await r.json();
+    scenarioSelect.innerHTML = '';
+    if (!j.scenarios.length) {
+      scenarioSelect.innerHTML = '<option value="">暂无场景</option>';
+      return;
+    }
+    j.scenarios.forEach((s) => {
+      const opt = document.createElement('option');
+      opt.value = s.id;
+      opt.textContent = s.name;
+      scenarioSelect.appendChild(opt);
+    });
+    await selectScenario(j.scenarios[0].id);
+  } catch { scenarioSelect.innerHTML = '<option value="">加载失败</option>'; }
+}
+
+async function selectScenario(id) {
+  try {
+    const r = await fetch('/api/scenarios/' + encodeURIComponent(id));
+    currentScenario = await r.json();
+  } catch { currentScenario = null; }
+}
+
+scenarioSelect.addEventListener('change', () => selectScenario(scenarioSelect.value));
+loadScenarios();
+
+// --------------- Settings ---------------
+function getSubMode() { return document.querySelector('input[name=sub]:checked').value; }
+function getBlurMode() { return document.querySelector('input[name=blur]:checked').value; }
+function getSpeed() { return parseFloat(document.querySelector('input[name=speed]:checked').value); }
+
+function applyDisplayMode() {
+  const sub = getSubMode(), blur = getBlurMode();
+  transcriptEl.classList.toggle('hide-sub', sub === 'none');
+  transcriptEl.classList.toggle('en-only', sub === 'en');
+  transcriptEl.classList.toggle('blur', blur === 'blur');
+}
+function applySpeed() { $('remote_audio').playbackRate = getSpeed(); }
+document.querySelectorAll('input[name=sub],input[name=blur]').forEach(r => r.addEventListener('change', applyDisplayMode));
+document.querySelectorAll('input[name=speed]').forEach(r => r.addEventListener('change', applySpeed));
+applyDisplayMode();
+
+function getCurrentSettings() {
+  return {
+    voice_id: getVoice(),
+    voice_name: getVoiceName(),
+    speed: getSpeed(),
+    subtitle: getSubMode(),
+    blur: getBlurMode(),
+  };
+}
+
+// --------------- State ---------------
+let pc = null, localStream = null, pcId = null, traceEs = null, muted = false;
+let conversationMessages = [];
+const ICE_SERVERS = [{urls:['stun:stun.cloudflare.com:3478']},{urls:['stun:stun.l.google.com:19302']}];
+
+// --------------- Transcript (live) ---------------
+function clearTranscript() {
+  transcriptEl.innerHTML = '<div class="empty">正在连接...</div>';
+  conversationMessages = [];
+  suggestionsEl.style.display = 'none';
+}
+
+function scrollToBottom() {
+  transcriptEl.scrollTop = transcriptEl.scrollHeight;
+}
+
+function addMessage(role, enText) {
+  const empty = transcriptEl.querySelector('.empty');
+  if (empty) empty.remove();
+
+  const row = document.createElement('div');
+  row.className = 'msg-row ' + role;
+
+  const avatar = document.createElement('div');
+  avatar.className = 'avatar ' + (role === 'user' ? 'user-avatar' : 'bot-avatar');
+  avatar.textContent = role === 'user' ? '🧑' : '🤖';
+
+  const div = document.createElement('div');
+  div.className = 'msg ' + role;
+  const enEl = document.createElement('div');
+  enEl.className = 'en';
+  enEl.textContent = enText;
+  div.appendChild(enEl);
+  const zhEl = document.createElement('div');
+  zhEl.className = 'zh';
+  zhEl.style.display = 'none';
+  div.appendChild(zhEl);
+
+  row.appendChild(avatar);
+  row.appendChild(div);
+  transcriptEl.appendChild(row);
+  scrollToBottom();
+  conversationMessages.push({role: role === 'user' ? 'user' : 'assistant', content: enText});
+
+  if (getSubMode() === 'en-zh') fetchTranslation(enText, zhEl);
+
+  if (role === 'bot') {
+    const btn = document.createElement('button');
+    btn.className = 'replay-btn';
+    btn.textContent = '🔊 重听';
+    btn.onclick = () => replayAudio(enText, btn);
+    div.appendChild(btn);
+    scrollToBottom();
+    fetchSuggestions();
+  }
+}
+
+async function fetchTranslation(text, zhEl) {
+  try {
+    const r = await fetch('/api/translate', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({text})});
+    if (!r.ok) return;
+    const j = await r.json();
+    zhEl.textContent = j.zh;
+    zhEl.style.display = '';
+    scrollToBottom();
+  } catch {}
+}
+
+async function replayAudio(text, btn) {
+  btn.classList.add('loading');
+  btn.textContent = '⏳ 加载中...';
+  try {
+    const r = await fetch('/api/tts_clip', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({text, voice_id: getVoice()})});
+    if (!r.ok) throw 0;
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    audio.playbackRate = getSpeed();
+    audio.play();
+    audio.onended = () => URL.revokeObjectURL(url);
+  } catch {}
+  btn.classList.remove('loading');
+  btn.textContent = '🔊 重听';
+}
+
+async function fetchSuggestions() {
+  suggestionsEl.style.display = '';
+  suggestionsEl.classList.add('loading');
+  chipsEl.innerHTML = '';
+  try {
+    const r = await fetch('/api/suggestions', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({messages: conversationMessages, scenario_id: currentScenario && currentScenario.id})});
+    if (!r.ok) throw 0;
+    const j = await r.json();
+    suggestionsEl.classList.remove('loading');
+    logPrompt('suggestions', j.prompts, {result: j.suggestions});
+    (j.suggestions || []).forEach(item => {
+      // Backward-compatible: accept old string format too.
+      const en = (typeof item === 'string') ? item : (item.en || '');
+      const zh = (typeof item === 'string') ? '' : (item.zh || '');
+      if (!en) return;
+      const chip = document.createElement('div');
+      chip.className = 'chip';
+      const enEl = document.createElement('div');
+      enEl.className = 'chip-en';
+      enEl.textContent = en;
+      chip.appendChild(enEl);
+      if (zh) {
+        const zhEl = document.createElement('div');
+        zhEl.className = 'chip-zh';
+        zhEl.textContent = zh;
+        chip.appendChild(zhEl);
+      }
+      chip.onclick = null;
+      chipsEl.appendChild(chip);
+    });
+  } catch { suggestionsEl.classList.remove('loading'); }
+}
+
+// --------------- WebRTC ---------------
+async function startSession() {
+  if (!currentScenario) { alert('请先选择一个场景'); return; }
+  $('btn_start').disabled = true;
+  try {
+    localStream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
+  } catch { alert('麦克风权限被拒绝'); $('btn_start').disabled=false; return; }
+
+  pc = new RTCPeerConnection({iceServers: ICE_SERVERS});
+  pc.ontrack = e => { $('remote_audio').srcObject = e.streams[0]; $('remote_audio').playbackRate = getSpeed(); };
+  pc.addTransceiver(localStream.getAudioTracks()[0], {direction:'sendrecv'});
+  pc.addTransceiver('video', {direction:'recvonly'});
+
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+  await new Promise(res => {
+    if (pc.iceGatheringState === 'complete') return res();
+    const t = setTimeout(res, 4000);
+    pc.addEventListener('icegatheringstatechange', () => { if (pc.iceGatheringState === 'complete'){clearTimeout(t);res();} });
+  });
+
+  const sp = currentScenario.system_prompt;
+  try {
+    const r = await fetch('/api/offer', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        sdp: pc.localDescription.sdp,
+        type: pc.localDescription.type,
+        system_prompt: sp,
+        greeting: currentScenario.greeting,
+        voice_id: getVoice(),
+        vad_stop_secs: 2,
+        speech_timeout: 1,
+      }),
+    });
+    if (!r.ok) throw new Error('信令失败');
+    const answer = await r.json();
+    pcId = answer.pc_id;
+    await pc.setRemoteDescription({sdp:answer.sdp, type:answer.type});
+  } catch (e) { alert('连接失败: '+e.message); cleanupConnection(); return; }
+
+  sessionStartTs = Date.now();
+  logPrompt('voice agent scenario', {
+    system: sp,
+    user: '(none — greeting + live STT input flow into the LLM via pipecat)'
+  }, {greeting: currentScenario.greeting, voice_id: getVoice(), scenario: currentScenario.id});
+  $('btn_start').style.display = 'none';
+  $('btn_stop').style.display = '';
+  $('btn_mute').style.display = '';
+  $('settings_panel').style.display = 'none';
+  $('transcript_section').style.display = '';
+  $('post_summary').style.display = 'none';
+  clearTranscript();
+  startTraceStream(pcId);
+}
+
+function cleanupConnection() {
+  if (traceEs){try{traceEs.close()}catch{} traceEs=null;}
+  if (pc){try{pc.close()}catch{} pc=null;}
+  if (localStream){localStream.getTracks().forEach(t=>{try{t.stop()}catch{}});localStream=null;}
+  pcId=null; muted=false;
+  $('btn_stop').style.display='none';
+  $('btn_mute').style.display='none';
+  $('btn_mute').textContent='🎤 静音';
+  $('btn_mute').classList.remove('active');
+}
+
+async function endSession() {
+  // Capture conversation before tearing down.
+  const msgs = conversationMessages.slice();
+  const settings = getCurrentSettings();
+  const scenarioId = currentScenario && currentScenario.id;
+  const scenarioName = currentScenario && currentScenario.name;
+  const duration = sessionStartTs ? (Date.now() - sessionStartTs) / 1000 : null;
+
+  cleanupConnection();
+
+  // Reveal the summary panel inside the setup view.
+  $('post_summary').style.display = '';
+  const card = $('post_summary_card');
+  card.innerHTML = '<div class="summary-loading">正在生成总结，请稍候...</div>';
+
+  if (!msgs.length) {
+    card.innerHTML = '<div class="summary-loading">本次没有对话内容，未保存。</div>';
+    return;
+  }
+
+  try {
+    const r = await fetch('/api/sessions', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        messages: msgs,
+        scenario_id: scenarioId,
+        scenario_name: scenarioName,
+        settings,
+        duration_secs: duration,
+      }),
+    });
+    if (!r.ok) {
+      const txt = await r.text();
+      card.innerHTML = `<div class="summary-loading">保存失败：${txt || r.status}</div>`;
+      return;
+    }
+    const saved = await r.json();
+    logPrompt('session summary', saved.summary && saved.summary.prompts, {score: saved.summary && saved.summary.score, session_id: saved.id});
+    renderSummaryCard(card, saved.summary);
+  } catch (e) {
+    card.innerHTML = `<div class="summary-loading">保存失败：${e.message}</div>`;
+  }
+}
+
+function startTraceStream(pid) {
+  if (traceEs){try{traceEs.close()}catch{}}
+  traceEs = new EventSource('/api/trace/stream?pc_id='+encodeURIComponent(pid));
+
+  // Buffer STT fragments: only show the user's text after 3s of silence
+  // or when the bot replies — whichever comes first.
+  let sttBuffer = [];
+  let sttTimer = null;
+
+  function flushUserBuffer() {
+    if (sttTimer) { clearTimeout(sttTimer); sttTimer = null; }
+    if (!sttBuffer.length) return;
+    const fullText = sttBuffer.join(' ');
+    sttBuffer = [];
+    addMessage('user', fullText);
+  }
+
+  traceEs.onmessage = e => {
+    let evt; try{evt=JSON.parse(e.data)}catch{return;}
+
+    if (evt.stage==='stt' && evt.text) {
+      const text = evt.text.trim();
+      if (!text) return;
+      sttBuffer.push(text);
+      // Reset the 3-second timer each time a new fragment arrives.
+      if (sttTimer) clearTimeout(sttTimer);
+      sttTimer = setTimeout(flushUserBuffer, 3000);
+    } else if (evt.stage==='llm.end' && evt.text) {
+      // Bot replied — flush any buffered user text first, then show bot.
+      flushUserBuffer();
+      addMessage('bot', evt.text);
+    }
+  };
+}
+
+$('btn_start').onclick = startSession;
+$('btn_stop').onclick = endSession;
+$('btn_mute').onclick = () => {
+  if (!localStream) return;
+  muted=!muted;
+  localStream.getAudioTracks().forEach(t=>t.enabled=!muted);
+  $('btn_mute').textContent = muted ? '🔇 已静音' : '🎤 静音';
+  $('btn_mute').classList.toggle('active', muted);
+};
+
+// Default: show history view on page load.
+showView('history');
+</script>
+</body>
+</html>

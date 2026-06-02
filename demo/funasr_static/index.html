@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>FunASR · Web Demo</title>
+<style>
+  body { font: 14px/1.5 -apple-system,Segoe UI,Helvetica,Arial,sans-serif; max-width: 760px; margin: 24px auto; padding: 0 16px; color: #222; }
+  h1   { font-size: 22px; margin: 0 0 4px; }
+  .sub { color:#666; margin-bottom: 20px; }
+  fieldset { border: 1px solid #ddd; border-radius: 6px; padding: 14px 16px; margin-bottom: 14px; }
+  legend { padding: 0 6px; color: #444; font-weight: 600; }
+  label { display:block; margin: 8px 0 4px; font-weight: 600; font-size: 13px; }
+  select, input[type=text] { width: 220px; padding: 7px 8px; border: 1px solid #ccc; border-radius: 4px; font: inherit; }
+  button { padding: 8px 14px; border: 0; border-radius: 4px; background: #2563eb; color: white; cursor: pointer; font-size: 14px; }
+  button:hover { background: #1d4ed8; }
+  button[disabled] { background:#999; cursor: not-allowed; }
+  .secondary { background:#6b7280; }
+  .secondary:hover { background:#4b5563; }
+  pre { background:#f6f8fa; padding:10px; border-radius:6px; overflow:auto; max-height: 320px; white-space: pre-wrap; word-break: break-word; }
+  .status { margin: 8px 0; color:#374151; font-size: 13px; }
+  audio { width: 100%; margin-top: 8px; }
+  .small { font-size: 12px; color: #6b7280; }
+  .row { display:flex; gap:12px; flex-wrap: wrap; align-items: flex-end; }
+  .footer { color:#6b7280; font-size:12px; margin-top: 24px; }
+  .result-text { font-size: 16px; line-height: 1.7; padding: 12px; background:#fff7ed; border-left: 4px solid #f59e0b; border-radius: 4px; min-height: 24px; }
+  .mono { font-family: ui-monospace, Menlo, Consolas, monospace; }
+</style>
+</head>
+<body>
+<h1>FunASR · Web Demo</h1>
+<div class="sub">SenseVoiceSmall + fsmn-vad + ct-punc · 多语言 + 情感 emoji</div>
+
+<fieldset>
+  <legend>选项</legend>
+  <div class="row">
+    <div>
+      <label>language</label>
+      <select id="language">
+        <option value="auto" selected>auto · 自动检测</option>
+        <option value="zh">zh · 中文</option>
+        <option value="en">en · English</option>
+        <option value="yue">yue · 粤语</option>
+        <option value="ja">ja · 日本語</option>
+        <option value="ko">ko · 한국어</option>
+        <option value="nospeech">nospeech</option>
+      </select>
+    </div>
+    <div>
+      <label>use_itn (反向归一化)</label>
+      <select id="use_itn">
+        <option value="true" selected>true</option>
+        <option value="false">false</option>
+      </select>
+    </div>
+  </div>
+</fieldset>
+
+<fieldset>
+  <legend>1. 上传音频文件</legend>
+  <input type="file" id="audio_file" accept="audio/*,video/*" />
+  <div class="small">支持 wav / mp3 / m4a / flac / 视频音轨 等 ffmpeg 可读格式</div>
+</fieldset>
+
+<fieldset>
+  <legend>2. 或浏览器录音</legend>
+  <div class="row">
+    <button type="button" id="rec_btn" class="secondary">● 开始录音</button>
+    <span class="small" id="rec_status">未录制</span>
+  </div>
+  <audio id="recorded_player" controls style="display:none"></audio>
+</fieldset>
+
+<button id="go">▶ 识别</button>
+<button id="clear" class="secondary" style="margin-left:8px">清空结果</button>
+
+<div class="status" id="status"></div>
+
+<h3 style="margin-top: 18px">结果 (text)</h3>
+<div class="result-text" id="result_text"></div>
+
+<h3 style="margin-top: 18px">原始 raw 输出</h3>
+<pre id="result_raw"></pre>
+
+<div class="footer">
+  调用 <span class="mono">POST /asr</span> · 健康检查 <a href="/health" target="_blank">/health</a> · API 见 <a href="/docs" target="_blank">/docs</a>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+let mediaRecorder, chunks = [], recordedBlob = null, recordedMime = '';
+$('rec_btn').addEventListener('click', async () => {
+  if (mediaRecorder && mediaRecorder.state === 'recording') {
+    mediaRecorder.stop();
+    return;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    mediaRecorder = new MediaRecorder(stream);
+    recordedMime = mediaRecorder.mimeType || 'audio/webm';
+    chunks = [];
+    mediaRecorder.ondataavailable = (e) => chunks.push(e.data);
+    mediaRecorder.onstop = () => {
+      recordedBlob = new Blob(chunks, { type: recordedMime });
+      const url = URL.createObjectURL(recordedBlob);
+      $('recorded_player').src = url;
+      $('recorded_player').style.display = '';
+      $('rec_status').textContent = '已录制 ' + (recordedBlob.size/1024).toFixed(1) + ' KB · ' + recordedMime;
+      $('rec_btn').textContent = '● 重新录音';
+      stream.getTracks().forEach(t => t.stop());
+    };
+    mediaRecorder.start();
+    $('rec_btn').textContent = '■ 停止录音';
+    $('rec_status').textContent = '录音中...';
+  } catch (err) {
+    $('rec_status').textContent = '无法访问麦克风：' + err.message;
+  }
+});
+
+$('go').addEventListener('click', async () => {
+  $('status').textContent = '请求中...';
+  $('result_text').textContent = '';
+  $('result_raw').textContent = '';
+  $('go').disabled = true;
+  try {
+    const fd = new FormData();
+    const f = $('audio_file').files[0];
+    if (f) {
+      fd.append('file', f);
+    } else if (recordedBlob) {
+      // pick a sensible filename suffix from mime
+      const ext = recordedMime.includes('webm') ? 'webm'
+                : recordedMime.includes('ogg')  ? 'ogg'
+                : recordedMime.includes('mp4')  ? 'm4a'
+                : 'wav';
+      fd.append('file', new File([recordedBlob], 'recording.' + ext, { type: recordedMime }));
+    } else {
+      throw new Error('请先上传音频或录音');
+    }
+    fd.append('language', $('language').value);
+    fd.append('use_itn', $('use_itn').value);
+
+    const t0 = performance.now();
+    const r = await fetch('/asr', { method: 'POST', body: fd });
+    const dt = ((performance.now() - t0) / 1000).toFixed(2);
+    if (!r.ok) {
+      const t = await r.text();
+      throw new Error('HTTP ' + r.status + ': ' + t.slice(0, 300));
+    }
+    const j = await r.json();
+    $('result_text').textContent = j.text || '(空)';
+    $('result_raw').textContent = j.raw || '';
+    $('status').textContent = `OK · 总耗时 ${dt}s · 服务端推理 ${j.elapsed_sec}s`;
+  } catch (err) {
+    $('status').textContent = 'ERROR: ' + err.message;
+  } finally {
+    $('go').disabled = false;
+  }
+});
+
+$('clear').addEventListener('click', () => {
+  $('status').textContent = '';
+  $('result_text').textContent = '';
+  $('result_raw').textContent = '';
+});
+</script>
+</body>
+</html>

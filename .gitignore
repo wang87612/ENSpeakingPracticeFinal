@@ -1,0 +1,9 @@
+.secrets/
+.certs/
+logs/
+models/
+sessions/
+__pycache__/
+*.pyc
+*.pid
+.DS_Store
