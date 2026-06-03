@@ -820,14 +820,35 @@ def list_scenarios():
 
 @app.get("/api/scenarios/{scenario_id}")
 def get_scenario(scenario_id: str):
-    """Get full scenario prompt by id."""
+    """Get full scenario prompt by id.
+
+    If the scenario JSON contains a 'scenario_content' field (instead of a
+    full 'system_prompt'), the server reads `base_prompt.txt` from the
+    scenarios directory and merges them by replacing the {{SCENARIO_CONTENT}}
+    placeholder. This allows authors to only write the topic-specific parts
+    (main problem + sub-problems) while reusing the shared prompt scaffold.
+    """
     if "/" in scenario_id or ".." in scenario_id:
         raise HTTPException(status_code=400, detail="invalid id")
     path = os.path.join(SCENARIOS_DIR, f"{scenario_id}.json")
     if not os.path.isfile(path):
         raise HTTPException(status_code=404, detail="scenario not found")
     with open(path, "r", encoding="utf-8") as f:
-        return json.loads(f.read())
+        data = json.loads(f.read())
+
+    # If the scenario already has a fully composed system_prompt, return as-is.
+    if "system_prompt" not in data and "scenario_content" in data:
+        base_path = os.path.join(SCENARIOS_DIR, "base_prompt.txt")
+        try:
+            with open(base_path, "r", encoding="utf-8") as bf:
+                base_template = bf.read()
+        except FileNotFoundError:
+            raise HTTPException(status_code=500, detail="base_prompt.txt not found")
+        data["system_prompt"] = base_template.replace(
+            "{{SCENARIO_CONTENT}}", data["scenario_content"]
+        )
+
+    return data
 
 
 # =============== Qwen prompt templates (centralized for debugging) ===============
