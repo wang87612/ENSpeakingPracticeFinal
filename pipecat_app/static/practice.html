@@ -41,7 +41,7 @@ button{padding:9px 16px;border:none;border-radius:6px;font-size:13px;cursor:poin
 .btn-mute:hover{background:#cbd5e1}
 .btn-mute.active{background:#fde68a;color:#92400e}
 
-.transcript{display:flex;flex-direction:column;gap:12px;max-height:520px;overflow-y:auto;padding:12px;margin-bottom:16px;border:1px solid #e2e8f0;border-radius:8px;background:#fff}
+.transcript{display:flex;flex-direction:column;gap:12px;max-height:416px;overflow-y:auto;padding:12px;margin-bottom:16px;border:1px solid #e2e8f0;border-radius:8px;background:#fff}
 .msg-row{display:flex;align-items:flex-start;gap:8px}
 .msg-row.user{flex-direction:row-reverse}
 .avatar{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;margin-top:2px}
@@ -55,7 +55,7 @@ button{padding:9px 16px;border:none;border-radius:6px;font-size:13px;cursor:poin
 .msg.user .zh{color:#bfdbfe;border-top-color:rgba(255,255,255,.2)}
 
 .blur .msg .en,.blur .msg .zh{filter:blur(5px);transition:filter .2s}
-.blur .msg:hover .en,.blur .msg:hover .zh{filter:none}
+.blur .msg .en:hover,.blur .msg .zh:hover{filter:none}
 .hide-sub .msg .en,.hide-sub .msg .zh{display:none}
 .en-only .msg .zh{display:none}
 
@@ -102,6 +102,12 @@ button{padding:9px 16px;border:none;border-radius:6px;font-size:13px;cursor:poin
 .summary-loading{color:#94a3b8;font-size:13px;font-style:italic;padding:12px 0}
 
 audio{display:none}
+.text-input-row{display:flex;gap:8px;margin-bottom:16px}
+.text-input-row input{flex:1;padding:9px 12px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;font-family:inherit;color:#334155}
+.text-input-row input:focus{outline:none;border-color:#2563eb}
+.btn-send{background:#2563eb;color:#fff;padding:9px 16px;border:none;border-radius:6px;font-size:13px;cursor:pointer;font-weight:500;font-family:inherit}
+.btn-send:hover{background:#1d4ed8}
+.msg-type-badge{font-size:11px;margin-right:4px}
 </style>
 </head>
 <body>
@@ -156,7 +162,7 @@ audio{display:none}
 
   <div class="controls">
     <button class="btn-start" id="btn_start">▶ 开始</button>
-    <button class="btn-stop" id="btn_stop" style="display:none">■ 结束会话</button>
+    <button class="btn-stop" id="btn_stop" style="display:none">■ 结束会话并总结</button>
     <button class="btn-mute" id="btn_mute" style="display:none">🎤 静音</button>
   </div>
 
@@ -165,6 +171,11 @@ audio{display:none}
   <div id="transcript" class="transcript">
     <div class="empty"></div>
   </div>
+  </div>
+
+  <div id="text_input_section" class="text-input-row" style="display:none">
+    <input type="text" id="text_input" placeholder="输入文字发送给模型..." />
+    <button id="btn_send" class="btn-send">发送</button>
   </div>
 
   <div class="suggestions" id="suggestions" style="display:none">
@@ -312,54 +323,49 @@ function fmtSettings(s, scenarioName) {
   return parts.join(' · ') || '-';
 }
 
-async function loadHistory() {
+function loadHistory() {
   const wrap = $('history_table_wrap');
-  wrap.innerHTML = '<div class="history-empty">加载中...</div>';
-  try {
-    const r = await fetch('/api/sessions');
-    const j = await r.json();
-    const rows = j.sessions || [];
-    if (!rows.length) {
-      wrap.innerHTML = '<div class="history-empty">暂无对话记录。点击右上角"开始新对话"开始练习。</div>';
-      return;
-    }
-    const table = document.createElement('table');
-    table.className = 'history-table';
-    table.innerHTML = `
-      <thead><tr>
-        <th class="col-time">时间</th>
-        <th>场景</th>
-        <th class="col-score">得分</th>
-        <th class="col-action"></th>
-      </tr></thead>
-      <tbody></tbody>`;
-    const tbody = table.querySelector('tbody');
-    rows.forEach(s => {
-      const tr = document.createElement('tr');
-      const tdTime = document.createElement('td');
-      tdTime.className = 'col-time';
-      tdTime.textContent = fmtTime(s.created_at);
-      const tdScenario = document.createElement('td');
-      tdScenario.className = 'col-settings';
-      tdScenario.textContent = s.scenario_name || '—';
-      const tdScore = document.createElement('td');
-      tdScore.className = 'col-score';
-      tdScore.textContent = (s.score == null) ? '—' : (s.score + '/10');
-      const tdAct = document.createElement('td');
-      tdAct.className = 'col-action';
-      const btn = document.createElement('button');
-      btn.className = 'view-btn';
-      btn.textContent = '查看';
-      btn.onclick = () => openDetail(s.id);
-      tdAct.appendChild(btn);
-      tr.append(tdTime, tdScenario, tdScore, tdAct);
-      tbody.appendChild(tr);
-    });
-    wrap.innerHTML = '';
-    wrap.appendChild(table);
-  } catch (e) {
-    wrap.innerHTML = '<div class="history-empty">加载失败</div>';
+  const all = JSON.parse(localStorage.getItem('practice_sessions') || '[]');
+  const rows = all.sort((a,b) => (b.created_at||'').localeCompare(a.created_at||''));
+  if (!rows.length) {
+    wrap.innerHTML = '<div class="history-empty">暂无对话记录。点击右上角"开始对话"开始练习。</div>';
+    return;
   }
+  const table = document.createElement('table');
+  table.className = 'history-table';
+  table.innerHTML = `
+    <thead><tr>
+      <th class="col-time">时间</th>
+      <th>场景</th>
+      <th class="col-score">得分</th>
+      <th class="col-action"></th>
+    </tr></thead>
+    <tbody></tbody>`;
+  const tbody = table.querySelector('tbody');
+  rows.forEach(s => {
+    const tr = document.createElement('tr');
+    const tdTime = document.createElement('td');
+    tdTime.className = 'col-time';
+    tdTime.textContent = fmtTime(s.created_at);
+    const tdScenario = document.createElement('td');
+    tdScenario.className = 'col-settings';
+    tdScenario.textContent = s.scenario_name || '—';
+    const tdScore = document.createElement('td');
+    tdScore.className = 'col-score';
+    const score = s.summary && s.summary.score;
+    tdScore.textContent = (score == null) ? '—' : (score + '/10');
+    const tdAct = document.createElement('td');
+    tdAct.className = 'col-action';
+    const btn = document.createElement('button');
+    btn.className = 'view-btn';
+    btn.textContent = '查看';
+    btn.onclick = () => openDetail(s.id);
+    tdAct.appendChild(btn);
+    tr.append(tdTime, tdScenario, tdScore, tdAct);
+    tbody.appendChild(tr);
+  });
+  wrap.innerHTML = '';
+  wrap.appendChild(table);
 }
 
 // --------------- Detail view ---------------
@@ -422,44 +428,50 @@ function renderDetailTranscript(messages) {
   const root = $('detail_transcript');
   root.innerHTML = '';
   (messages || []).forEach(m => {
+    const role = m.role === 'user' ? 'user' : 'bot';
+    const row = document.createElement('div');
+    row.className = 'msg-row ' + role;
+
+    const avatar = document.createElement('div');
+    avatar.className = 'avatar ' + (role === 'user' ? 'user-avatar' : 'bot-avatar');
+    avatar.textContent = role === 'user' ? '🧑' : '🤖';
+
     const div = document.createElement('div');
-    div.className = 'msg ' + (m.role === 'user' ? 'user' : 'bot');
+    div.className = 'msg ' + role;
     const en = document.createElement('div');
     en.className = 'en';
     en.textContent = m.content;
     div.appendChild(en);
-    root.appendChild(div);
+
+    row.appendChild(avatar);
+    row.appendChild(div);
+    root.appendChild(row);
   });
 }
 
-async function openDetail(id) {
+function openDetail(id) {
   showView('detail');
-  $('detail_meta').textContent = '加载中...';
-  $('detail_summary_card').innerHTML = '<div class="summary-loading">加载中...</div>';
-  $('detail_transcript').innerHTML = '';
-  try {
-    const r = await fetch('/api/sessions/' + encodeURIComponent(id));
-    if (!r.ok) throw 0;
-    const s = await r.json();
-    const meta = $('detail_meta');
-    meta.innerHTML = '';
-    const rows = [
-      ['时间', fmtTime(s.created_at)],
-      ['设置', fmtSettings(s.settings, s.scenario_name)],
-      ['消息数', (s.messages || []).length],
-    ];
-    if (s.duration_secs) rows.push(['时长', Math.round(s.duration_secs) + ' 秒']);
-    rows.forEach(([k, v]) => {
-      const d = document.createElement('div');
-      d.innerHTML = `<span class="label">${k}：</span><span>${v}</span>`;
-      meta.appendChild(d);
-    });
-    renderSummaryCard($('detail_summary_card'), s.summary);
-    logPrompt('session summary (saved id=' + id + ')', s.summary && s.summary.prompts, {score: s.summary && s.summary.score});
-    renderDetailTranscript(s.messages);
-  } catch (e) {
-    $('detail_meta').textContent = '加载失败';
+  const all = JSON.parse(localStorage.getItem('practice_sessions') || '[]');
+  const s = all.find(x => x.id === id);
+  if (!s) {
+    $('detail_meta').textContent = '记录未找到';
+    return;
   }
+  const meta = $('detail_meta');
+  meta.innerHTML = '';
+  const rows = [
+    ['时间', fmtTime(s.created_at)],
+    ['设置', fmtSettings(s.settings, s.scenario_name)],
+    ['消息数', (s.messages || []).length],
+  ];
+  if (s.duration_secs) rows.push(['时长', Math.round(s.duration_secs) + ' 秒']);
+  rows.forEach(([k, v]) => {
+    const d = document.createElement('div');
+    d.innerHTML = `<span class="label">${k}：</span><span>${v}</span>`;
+    meta.appendChild(d);
+  });
+  renderSummaryCard($('detail_summary_card'), s.summary);
+  renderDetailTranscript(s.messages);
 }
 
 // --------------- Voices ---------------
@@ -556,7 +568,7 @@ function scrollToBottom() {
   transcriptEl.scrollTop = transcriptEl.scrollHeight;
 }
 
-function addMessage(role, enText) {
+function addMessage(role, enText, type) {
   const empty = transcriptEl.querySelector('.empty');
   if (empty) empty.remove();
 
@@ -569,6 +581,7 @@ function addMessage(role, enText) {
 
   const div = document.createElement('div');
   div.className = 'msg ' + role;
+
   const enEl = document.createElement('div');
   enEl.className = 'en';
   enEl.textContent = enText;
@@ -582,9 +595,19 @@ function addMessage(role, enText) {
   row.appendChild(div);
   transcriptEl.appendChild(row);
   scrollToBottom();
-  conversationMessages.push({role: role === 'user' ? 'user' : 'assistant', content: enText});
+  const msg = {role: role === 'user' ? 'user' : 'assistant', content: enText};
+  if (role === 'user' && type) msg.type = type;
+  conversationMessages.push(msg);
 
   if (getSubMode() === 'en-zh') fetchTranslation(enText, zhEl);
+
+  if (role === 'user' && type === 'voice') {
+    const btn = document.createElement('button');
+    btn.className = 'replay-btn';
+    btn.textContent = '🔊 重听';
+    btn.onclick = () => replayAudio(enText, btn);
+    div.appendChild(btn);
+  }
 
   if (role === 'bot') {
     const btn = document.createElement('button');
@@ -637,8 +660,15 @@ async function fetchSuggestions() {
     logPrompt('suggestions', j.prompts, {result: j.suggestions});
     (j.suggestions || []).forEach(item => {
       // Backward-compatible: accept old string format too.
-      const en = (typeof item === 'string') ? item : (item.en || '');
-      const zh = (typeof item === 'string') ? '' : (item.zh || '');
+      let en = (typeof item === 'string') ? item : (item.en || '');
+      let zh = (typeof item === 'string') ? '' : (item.zh || '');
+      // Clean up: model sometimes puts "zh：xxx" inside en field
+      const zhMatch = en.match(/\n\s*zh[：:]\s*/i);
+      if (zhMatch) {
+        const parts = en.split(zhMatch[0]);
+        en = parts[0].trim();
+        if (!zh) zh = parts[1] ? parts[1].trim() : '';
+      }
       if (!en) return;
       const chip = document.createElement('div');
       chip.className = 'chip';
@@ -709,6 +739,7 @@ async function startSession() {
   $('btn_mute').style.display = '';
   $('settings_panel').style.display = 'none';
   $('transcript_section').style.display = '';
+  $('text_input_section').style.display = 'flex';
   $('post_summary').style.display = 'none';
   clearTranscript();
   startTraceStream(pcId);
@@ -721,6 +752,7 @@ function cleanupConnection() {
   pcId=null; muted=false;
   $('btn_stop').style.display='none';
   $('btn_mute').style.display='none';
+  $('text_input_section').style.display='none';
   $('btn_mute').textContent='🎤 静音';
   $('btn_mute').classList.remove('active');
 }
@@ -749,24 +781,33 @@ async function endSession() {
     const r = await fetch('/api/sessions', {
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({
-        messages: msgs,
-        scenario_id: scenarioId,
-        scenario_name: scenarioName,
-        settings,
-        duration_secs: duration,
-      }),
+      body: JSON.stringify({ messages: msgs, settings }),
     });
     if (!r.ok) {
       const txt = await r.text();
-      card.innerHTML = `<div class="summary-loading">保存失败：${txt || r.status}</div>`;
+      card.innerHTML = `<div class="summary-loading">生成总结失败：${txt || r.status}</div>`;
       return;
     }
-    const saved = await r.json();
-    logPrompt('session summary', saved.summary && saved.summary.prompts, {score: saved.summary && saved.summary.score, session_id: saved.id});
-    renderSummaryCard(card, saved.summary);
+    const {summary} = await r.json();
+    renderSummaryCard(card, summary);
+
+    // Save to localStorage
+    const record = {
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2,6),
+      created_at: new Date().toISOString(),
+      scenario_id: scenarioId,
+      scenario_name: scenarioName,
+      settings, duration_secs: duration,
+      messages: msgs,
+      summary,
+    };
+    const all = JSON.parse(localStorage.getItem('practice_sessions') || '[]');
+    all.unshift(record);
+    // Keep latest 50 sessions
+    if (all.length > 50) all.length = 50;
+    localStorage.setItem('practice_sessions', JSON.stringify(all));
   } catch (e) {
-    card.innerHTML = `<div class="summary-loading">保存失败：${e.message}</div>`;
+    card.innerHTML = `<div class="summary-loading">生成总结失败：${e.message}</div>`;
   }
 }
 
@@ -784,7 +825,7 @@ function startTraceStream(pid) {
     if (!sttBuffer.length) return;
     const fullText = sttBuffer.join(' ');
     sttBuffer = [];
-    addMessage('user', fullText);
+    addMessage('user', fullText, 'voice');
   }
 
   traceEs.onmessage = e => {
@@ -814,6 +855,19 @@ $('btn_mute').onclick = () => {
   $('btn_mute').textContent = muted ? '🔇 已静音' : '🎤 静音';
   $('btn_mute').classList.toggle('active', muted);
 };
+
+async function sendText() {
+  const input = $('text_input');
+  const text = input.value.trim();
+  if (!text || !pcId) return;
+  input.value = '';
+  addMessage('user', text, 'text');
+  try {
+    await fetch('/api/inject_text', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({pc_id: pcId, text})});
+  } catch {}
+}
+$('btn_send').onclick = sendText;
+$('text_input').addEventListener('keydown', e => { if (e.key === 'Enter') sendText(); });
 
 // Default: show history view on page load.
 showView('history');

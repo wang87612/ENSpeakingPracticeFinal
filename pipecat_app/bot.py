@@ -35,6 +35,7 @@ from pipecat.frames.frames import (
     LLMFullResponseStartFrame,
     LLMRunFrame,
     LLMTextFrame,
+    StartInterruptionFrame,
     TranscriptionFrame,
 )
 from pipecat.observers.base_observer import BaseObserver, FramePushed
@@ -592,6 +593,7 @@ class CosyVoice3TTSService(TTSService):
 # =============== App ===============
 app = FastAPI()
 pcs_map: dict[str, SmallWebRTCConnection] = {}
+tasks_map: dict[str, tuple] = {}  # pc_id -> (worker, context)
 ice_servers = [
     IceServer(urls="stun:stun.cloudflare.com:3478"),
     IceServer(urls="stun:stun.l.google.com:19302"),
@@ -710,6 +712,7 @@ async def run_bot(webrtc_connection: SmallWebRTCConnection,
         params=PipelineParams(enable_metrics=True, enable_usage_metrics=True),
         observers=[TraceObserver(pc_id, tracer)],
     )
+    tasks_map[pc_id] = (worker, context)
 
     @transport.event_handler("on_client_connected")
     async def on_client_connected(transport, client):
@@ -725,12 +728,14 @@ async def run_bot(webrtc_connection: SmallWebRTCConnection,
     async def on_client_disconnected(transport, client):
         logger.info("Client disconnected")
         tracer.emit(pc_id, "client.disconnected")
+        tasks_map.pop(pc_id, None)
         await worker.cancel()
 
     runner = PipelineRunner(handle_sigint=False)
     try:
         await runner.run(worker)
     finally:
+        tasks_map.pop(pc_id, None)
         tracer.emit(pc_id, "session.end")
 
 
@@ -1137,8 +1142,11 @@ def _format_transcript_for_summary(messages: list[dict]) -> str:
         content = (m.get("content") or "").strip()
         if not content:
             continue
-        speaker = "Engineer" if role == "user" else "Customer"
-        lines.append(f"{speaker}: {content}")
+        if role == "user":
+            tag = "🎤" if m.get("type") != "text" else "💬"
+            lines.append(f"Engineer {tag}: {content}")
+        else:
+            lines.append(f"Customer: {content}")
     return "\n".join(lines) if lines else "(empty conversation)"
 
 
@@ -1149,12 +1157,22 @@ async def _generate_summary(messages: list[dict], settings: dict) -> dict:
     dict so the session can still be saved."""
     transcript = _format_transcript_for_summary(messages)
 
+    # Calculate voice ratio for scoring
+    user_msgs = [m for m in (messages or []) if m.get("role") == "user" and (m.get("content") or "").strip()]
+    voice_count = sum(1 for m in user_msgs if m.get("type") != "text")
+    total_user = len(user_msgs)
+    voice_ratio = voice_count / total_user if total_user > 0 else 0
+
     system_prompt = SUMMARY_SYSTEM_PROMPT
 
     settings_blurb = json.dumps(settings or {}, ensure_ascii=False)
     user_prompt = (
-        f"对话记录（Engineer 是练习的人类）：\n\n{transcript}\n\n"
-        f"练习设置：{settings_blurb}\n\n"
+        f"对话记录（Engineer 是练习的人类，🎤=语音消息，💬=文本消息）：\n\n{transcript}\n\n"
+        f"练习设置：{settings_blurb}\n"
+        f"口语比例：{voice_count}/{total_user} 条消息通过语音发送（{voice_ratio:.0%}）\n\n"
+        "评分规则补充：这是口语练习，口语比例直接影响评分。"
+        "如果口语比例低于50%，最高分不超过6分；低于30%，最高不超过4分。"
+        "100%语音则不扣分。请在 summary 中提及口语比例情况。\n\n"
         "现在输出 JSON 对象。"
     )
 
@@ -1273,47 +1291,20 @@ def get_session(session_id: str):
 
 @app.post("/api/sessions")
 async def create_session(req: dict):
-    """Save a finished practice session and generate the Qwen-based summary.
+    """Generate a Qwen-based summary for a finished practice session.
+    No longer saves to disk — the frontend stores in localStorage.
 
     Body:
-      messages       : [{role:"user"|"assistant", content:str}]
-      scenario_id    : str (optional)
-      scenario_name  : str (optional)
-      settings       : dict (free-form; voice/lang/speed/sub/blur etc.)
-      duration_secs  : float (optional)
+      messages       : [{role:"user"|"assistant", content:str, type?:str}]
+      settings       : dict (optional)
     """
     messages = req.get("messages") or []
     if not isinstance(messages, list) or not messages:
         raise HTTPException(status_code=400, detail="messages required")
     settings = req.get("settings") or {}
-    scenario_id = (req.get("scenario_id") or "").strip()
-    scenario_name = (req.get("scenario_name") or "").strip()
-    duration_secs = req.get("duration_secs")
 
     summary = await _generate_summary(messages, settings)
-
-    sid = _new_session_id()
-    record = {
-        "id": sid,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "scenario_id": scenario_id,
-        "scenario_name": scenario_name,
-        "settings": settings,
-        "duration_secs": duration_secs,
-        "messages": [
-            {"role": m.get("role"), "content": (m.get("content") or "").strip()}
-            for m in messages
-            if isinstance(m, dict) and (m.get("content") or "").strip()
-        ],
-        "summary": summary,
-    }
-
-    path = _session_path(sid)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        f.write(json.dumps(record, ensure_ascii=False, indent=2))
-    os.replace(tmp, path)
-    return record
+    return {"summary": summary}
 
 
 @app.post("/api/tts_clip")
@@ -1522,6 +1513,21 @@ async def trace_stream(pc_id: str | None = None):
             "Connection": "keep-alive",
         },
     )
+
+
+@app.post("/api/inject_text")
+async def inject_text(request: dict):
+    pc_id = request.get("pc_id")
+    text = (request.get("text") or "").strip()
+    if not pc_id or not text:
+        raise HTTPException(400, "pc_id and text required")
+    entry = tasks_map.get(pc_id)
+    if not entry:
+        raise HTTPException(404, "session not found")
+    worker, context = entry
+    context.add_message({"role": "user", "content": f"[文本消息] {text}"})
+    await worker.queue_frames([StartInterruptionFrame(), LLMRunFrame()])
+    return {"ok": True}
 
 
 @app.post("/api/offer")
