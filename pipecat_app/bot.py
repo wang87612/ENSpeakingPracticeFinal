@@ -123,8 +123,8 @@ GREETING = _read_text(
 #     threshold while the bot is speaking — outside of bot-speech, a single
 #     word still triggers (so the user can say "yes" / "stop" naturally).
 CONFIG: dict[str, Any] = {
-    "vad_confidence":         float(os.environ.get("VAD_CONFIDENCE", "0.7")),
-    "vad_min_volume":         float(os.environ.get("VAD_MIN_VOLUME", "0.6")),
+    "vad_confidence":         float(os.environ.get("VAD_CONFIDENCE", "0.5")),
+    "vad_min_volume":         float(os.environ.get("VAD_MIN_VOLUME", "0.3")),
     "vad_stop_secs":          float(os.environ.get("VAD_STOP_SECS", "0.8")),
     "speech_timeout":         float(os.environ.get("SPEECH_TIMEOUT", "1.0")),
     "min_words_to_interrupt": int(os.environ.get("MIN_WORDS_TO_INTERRUPT", "3")),
@@ -446,7 +446,7 @@ class FunASRSTTService(SegmentedSTTService):
             self._session = None
 
     async def run_stt(self, audio: bytes) -> AsyncGenerator[Frame | None, None]:
-        if not audio or len(audio) < 1024:
+        if not audio or len(audio) < 320:
             return
         await self.start_ttfb_metrics()
         if self._tracer:
