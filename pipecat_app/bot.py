@@ -1089,7 +1089,7 @@ async def api_suggestions(req: dict):
                     "messages": payload,
                     "temperature": 0.9,
                     "top_p": 0.95,
-                    "max_tokens": 300,
+                    "max_tokens": 600,
                     # Bailian's qwen3 / qwen3.6 family default to "thinking
                     # mode": they emit reasoning_content and leave content
                     # null until reasoning finishes, which then often
@@ -1147,6 +1147,19 @@ async def api_suggestions(req: dict):
                 _collect(obj)
         except Exception:
             pass
+
+        # Strategy 0b: JSON mode output but truncated mid-stream (max_tokens).
+        # The outer object never closes, so json.loads fails above. Salvage
+        # every *complete* {...} object so we still render cards instead of
+        # dumping raw JSON text into the suggestion box.
+        if not suggestions and '"en"' in text:
+            for blk in _re.findall(r'\{[^{}]*\}', text):
+                try:
+                    item = json.loads(blk)
+                except Exception:
+                    continue
+                if isinstance(item, dict) and (item.get("en") or item.get("english")):
+                    _collect([item])
 
         # Strategy 1: strict JSON array of objects.
         m = _re.search(r'\[.*\]', text, _re.DOTALL)
