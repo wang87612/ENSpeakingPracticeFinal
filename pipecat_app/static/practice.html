@@ -721,6 +721,7 @@ async function startSession() {
         voice_id: getVoice(),
         vad_stop_secs: 2,
         speech_timeout: 1,
+        stt_language: 'en',
       }),
     });
     if (!r.ok) throw new Error('信令失败');

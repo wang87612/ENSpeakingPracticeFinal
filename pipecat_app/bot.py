@@ -56,6 +56,9 @@ from pipecat.turns.types import ProcessFrameResult
 from pipecat.turns.user_start.min_words_user_turn_start_strategy import (
     MinWordsUserTurnStartStrategy,
 )
+from pipecat.turns.user_start.vad_user_turn_start_strategy import (
+    VADUserTurnStartStrategy,
+)
 from pipecat.turns.user_turn_strategies import (
     UserTurnStrategies,
     default_user_turn_stop_strategies,
@@ -377,17 +380,51 @@ class TraceObserver(BaseObserver):
 
 
 # =============== Custom STT: FunASR ===============
+# SenseVoice emits a language token (e.g. "<|en|>", "<|zh|>") at the start of
+# its raw output. Map FunASR's language codes to Pipecat's Language enum so the
+# TranscriptionFrame carries the *actual* spoken language instead of a fixed
+# label. Falls back to English when unknown (this stack's practice flow is
+# English-first; the Chinese-assistant flow forces language="zh" explicitly).
+_FUNASR_LANG_MAP: dict[str, Language] = {
+    "zh": Language.ZH,
+    "en": Language.EN,
+    "ja": Language.JA,
+    "ko": Language.KO,
+    "yue": Language.ZH,  # Cantonese: no dedicated enum; treat as Chinese.
+}
+
+_RAW_LANG_TOKEN_RE = __import__("re").compile(r"<\|([a-z]{2,3})\|>")
+
+
+def _resolve_language(forced: str, raw: str, default: Language) -> Language:
+    """Pick the TranscriptionFrame language.
+
+    1. If STT was called with an explicit language (not "auto"), trust it.
+    2. Otherwise read SenseVoice's leading language token from ``raw``.
+    3. Fall back to ``default``.
+    """
+    forced = (forced or "").lower()
+    if forced and forced != "auto":
+        return _FUNASR_LANG_MAP.get(forced, default)
+    m = _RAW_LANG_TOKEN_RE.search(raw or "")
+    if m:
+        return _FUNASR_LANG_MAP.get(m.group(1), default)
+    return default
+
+
 class FunASRSTTService(SegmentedSTTService):
     """Segmented STT that calls FunASR /asr once per VAD-bounded segment."""
 
     def __init__(self, *, base_url: str, language: str = "auto", use_itn: bool = True,
                  sample_rate: int = 16000,
+                 default_language: Language = Language.EN,
                  pc_id: str | None = None, tracer: Tracer | None = None,
                  **kw):
         super().__init__(sample_rate=sample_rate, **kw)
         self._base_url = base_url.rstrip("/")
         self._language = language
         self._use_itn = use_itn
+        self._default_language = default_language
         self._session: aiohttp.ClientSession | None = None
         self._pc_id = pc_id
         self._tracer = tracer
@@ -445,6 +482,7 @@ class FunASRSTTService(SegmentedSTTService):
 
         await self.stop_ttfb_metrics()
         text = (j.get("text") or "").strip()
+        raw = j.get("raw") or ""
         elapsed = j.get("elapsed_sec")
         if not text:
             if self._tracer:
@@ -452,6 +490,7 @@ class FunASRSTTService(SegmentedSTTService):
                                   elapsed_sec=elapsed, audio_bytes=len(audio))
             return
         logger.info(f"[STT] {text} ({elapsed}s)")
+        lang = _resolve_language(self._language, raw, self._default_language)
         # The TraceObserver will see the TranscriptionFrame and emit "stt".
         # We additionally emit "stt.timing" so /trace can show how long FunASR took.
         # NOTE: noise/short-utterance filtering is handled by Pipecat's
@@ -462,12 +501,12 @@ class FunASRSTTService(SegmentedSTTService):
         if self._tracer:
             self._tracer.emit(self._pc_id, "stt.timing",
                               elapsed_sec=elapsed, audio_bytes=len(audio),
-                              text=text)
+                              text=text, language=str(lang))
         yield TranscriptionFrame(
             text=text,
             user_id="user",
             timestamp=time.strftime("%Y-%m-%dT%H:%M:%S"),
-            language=Language.ZH,
+            language=lang,
         )
 
 
@@ -611,13 +650,20 @@ async def run_bot(webrtc_connection: SmallWebRTCConnection,
                   greeting: str | None = None,
                   voice_id: str | None = None,
                   vad_stop_secs: float | None = None,
-                  speech_timeout: float | None = None):
+                  speech_timeout: float | None = None,
+                  stt_language: str | None = None):
     pc_id = webrtc_connection.pc_id
     logger.info(f"Starting bot pipeline pc_id={pc_id}")
     sp = (system_prompt or SYSTEM_PROMPT).strip() or SYSTEM_PROMPT
     gr = (greeting or GREETING).strip() or GREETING
     tts_wav, tts_prompt_text = _get_voice(voice_id)
-    logger.info(f"persona: system_prompt[{len(sp)} chars] greeting[{len(gr)} chars] voice={voice_id}")
+    # Session language drives STT. Practice (English) passes "en" so SenseVoice
+    # is not allowed to misdetect accented English as Chinese; the Chinese
+    # assistant passes nothing -> "auto" with a ZH fallback (unchanged behavior).
+    stt_lang = (stt_language or "auto").lower()
+    stt_default_lang = Language.EN if stt_lang == "en" else Language.ZH
+    logger.info(f"persona: system_prompt[{len(sp)} chars] greeting[{len(gr)} chars] "
+                f"voice={voice_id} stt_language={stt_lang}")
     tracer.emit(pc_id, "session.start",
                 system_prompt=_truncate(sp, 2000),
                 greeting=_truncate(gr, 500),
@@ -630,15 +676,18 @@ async def run_bot(webrtc_connection: SmallWebRTCConnection,
             audio_out_enabled=True,
             audio_in_sample_rate=16000,    # match FunASR expectation
             audio_out_sample_rate=24000,   # match CosyVoice output
-            # Per Pipecat docs: keep VAD start_secs/stop_secs at the official
-            # defaults (0.2s/0.2s) — the SmartTurn / SpeechTimeout stop
-            # strategies are tuned against those values; changing them
-            # produces warnings and can cause delayed turn detection.
-            # Only confidence and min_volume are exposed for environment
-            # noise tuning.
+            # Per Pipecat docs: VAD start_secs controls how long the user
+            # must sustain speech before VAD confirms "speaking started" and
+            # emits VADUserStartedSpeakingFrame. We set it to 1.0s so brief
+            # noises / back-channel sounds don't interrupt the bot, but
+            # sustained speech (1+ second) reliably triggers interruption.
+            # NOTE: This is higher than the default 0.2s. Quick utterances
+            # like "yes"/"no" won't interrupt while bot is speaking, which
+            # is acceptable for this practice scenario.
             vad_analyzer=SileroVADAnalyzer(
                 params=VADParams(
                     confidence=float(CONFIG["vad_confidence"]),
+                    start_secs=1.0,
                     stop_secs=float(vad_stop_secs if vad_stop_secs is not None else CONFIG["vad_stop_secs"]),
                     min_volume=float(CONFIG["vad_min_volume"]),
                 ),
@@ -647,7 +696,8 @@ async def run_bot(webrtc_connection: SmallWebRTCConnection,
     )
 
     stt = FunASRSTTService(
-        base_url=FUNASR_URL, language="auto",
+        base_url=FUNASR_URL, language=stt_lang,
+        default_language=stt_default_lang,
         pc_id=pc_id, tracer=tracer,
     )
     tts = CosyVoice3TTSService(
@@ -675,17 +725,20 @@ async def run_bot(webrtc_connection: SmallWebRTCConnection,
     user_aggregator, assistant_aggregator = LLMContextAggregatorPair(
         context,
         user_params=LLMUserAggregatorParams(
-            # Official Pipecat recipe for "don't interrupt the bot on a single
-            # grunt or echo": MinWordsUserTurnStartStrategy. The threshold
-            # only applies while the bot is speaking; when the bot is silent
-            # a single word still triggers the turn so the user can issue
-            # short commands ("停", "yes") naturally.
+            # Interruption strategy:
+            # VADUserTurnStartStrategy triggers based on VAD speech detection,
+            # NOT on transcription text. This is critical because FunASR is a
+            # SegmentedSTTService that only returns text AFTER the user stops
+            # speaking — so word-count-based strategies can never interrupt
+            # during bot speech. VAD-based detection works immediately.
             #
-            # Stop detection stays on Pipecat's default LocalSmartTurnAnalyzerV3
-            # (see default_user_turn_stop_strategies()), which is an AI model
-            # that decides whether the user is actually finished speaking.
+            # The VAD start_secs (configured on the transport above) controls
+            # how long speech must be sustained before VAD confirms "user is
+            # speaking". Combined with VADUserTurnStartStrategy, this means:
+            # user speaks for start_secs → VAD fires → turn starts → bot interrupted.
             user_turn_strategies=UserTurnStrategies(
                 start=[
+                    VADUserTurnStartStrategy(),
                     CJKAwareMinWordsStartStrategy(
                         min_words=int(CONFIG["min_words_to_interrupt"]),
                     ),
@@ -878,8 +931,8 @@ SUGGESTIONS_SYSTEM_PROMPT = (
     "如果工程师刚说了要去检查某件事，那建议必须假设检查已完成——"
     "报告一个简短结论、提一个问题、或建议一个修复方案。\n\n"
     "输出格式（严格遵守）：\n"
-    "- 只返回一个 JSON 数组，包含 3 到 5 个对象。\n"
-    "- 每个对象有两个 key：\"en\"（英语建议）和 \"zh\"（对应的简短中文翻译）。\n"
+    "- 只返回一个 JSON 对象，包含一个 key \"suggestions\"，其值为包含 3 到 5 个对象的数组。\n"
+    "- 数组里每个对象有两个 key：\"en\"（英语建议）和 \"zh\"（对应的简短中文翻译）。\n"
     "- 中文必须准确对应英文含义，也要简短。"
 )
 
@@ -1011,12 +1064,12 @@ async def api_suggestions(req: dict):
     user_prompt_parts.append("目前对话记录（最新在最下面）：\n" + transcript)
     if last_customer_line:
         user_prompt_parts.append(f"工程师需要回复客户的最后一句话：\"{last_customer_line}\"")
-    user_prompt_parts.append("只返回 JSON 数组，包含 3-5 条工程师下一句的建议。")
+    user_prompt_parts.append("只返回一个 JSON 对象，其中 \"suggestions\" 是包含 3-5 条工程师下一句建议的数组。")
     user_prompt_parts.append(
         "输出格式示例（严格按照此结构，替换为你的建议）：\n"
-        "[{\"en\":\"What's the exact error?\",\"zh\":\"具体的错误是什么？\"},"
+        "{\"suggestions\":[{\"en\":\"What's the exact error?\",\"zh\":\"具体的错误是什么？\"},"
         "{\"en\":\"Let me check the policy.\",\"zh\":\"我看下策略。\"},"
-        "{\"en\":\"Try it again and tell me.\",\"zh\":\"再试一次然后告诉我。\"}]"
+        "{\"en\":\"Try it again and tell me.\",\"zh\":\"再试一次然后告诉我。\"}]}"
     )
     user_prompt = "\n\n".join(user_prompt_parts)
 
@@ -1043,6 +1096,11 @@ async def api_suggestions(req: dict):
                     # overruns max_tokens. Disable thinking for this
                     # short-suggestion task.
                     "enable_thinking": False,
+                    # Force valid JSON. DashScope requires the word "json" to
+                    # appear in the messages (the prompts above already do).
+                    # The regex fallbacks below stay as a safety net in case
+                    # the model still returns malformed output.
+                    "response_format": {"type": "json_object"},
                 },
             ) as r:
                 j = await r.json()
@@ -1065,20 +1123,38 @@ async def api_suggestions(req: dict):
         # Each entry is {"en": str, "zh": str}.
         suggestions: list[dict] = []
 
+        def _collect(items) -> None:
+            for item in items:
+                if isinstance(item, dict):
+                    en = str(item.get("en") or item.get("english") or "").strip()
+                    zh = str(item.get("zh") or item.get("chinese") or "").strip()
+                    if en:
+                        suggestions.append({"en": en, "zh": zh})
+                elif isinstance(item, str) and item.strip():
+                    suggestions.append({"en": item.strip(), "zh": ""})
+
+        # Strategy 0: JSON mode returns a top-level object, e.g.
+        # {"suggestions": [...]}. Parse it and pull the first list value.
+        try:
+            obj = json.loads(text)
+            if isinstance(obj, dict):
+                arr = obj.get("suggestions")
+                if not isinstance(arr, list):
+                    arr = next((v for v in obj.values() if isinstance(v, list)), None)
+                if isinstance(arr, list):
+                    _collect(arr)
+            elif isinstance(obj, list):
+                _collect(obj)
+        except Exception:
+            pass
+
         # Strategy 1: strict JSON array of objects.
         m = _re.search(r'\[.*\]', text, _re.DOTALL)
-        if m:
+        if not suggestions and m:
             try:
                 parsed = json.loads(m.group())
                 if isinstance(parsed, list):
-                    for item in parsed:
-                        if isinstance(item, dict):
-                            en = str(item.get("en") or item.get("english") or "").strip()
-                            zh = str(item.get("zh") or item.get("chinese") or "").strip()
-                            if en:
-                                suggestions.append({"en": en, "zh": zh})
-                        elif isinstance(item, str) and item.strip():
-                            suggestions.append({"en": item.strip(), "zh": ""})
+                    _collect(parsed)
             except Exception:
                 pass
 
@@ -1213,6 +1289,10 @@ async def _generate_summary(messages: list[dict], settings: dict) -> dict:
                     "top_p": 0.9,
                     "max_tokens": 900,
                     "enable_thinking": False,
+                    # Summary already expects a top-level JSON object, so JSON
+                    # mode is a natural fit. The {...} regex extraction below
+                    # remains as a safety net.
+                    "response_format": {"type": "json_object"},
                 },
             ) as r:
                 j = await r.json()
@@ -1575,7 +1655,8 @@ async def offer(request: dict, background_tasks: BackgroundTasks):
             pcs_map.pop(webrtc_connection.pc_id, None)
 
         background_tasks.add_task(run_bot, pipecat_connection, system_prompt, greeting, voice_id,
-                                   request.get("vad_stop_secs"), request.get("speech_timeout"))
+                                   request.get("vad_stop_secs"), request.get("speech_timeout"),
+                                   request.get("stt_language"))
 
     answer = pipecat_connection.get_answer()
     pcs_map[answer["pc_id"]] = pipecat_connection
