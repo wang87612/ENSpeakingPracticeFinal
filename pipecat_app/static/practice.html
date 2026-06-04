@@ -200,6 +200,13 @@ audio{display:none}
         <label><input type="radio" name="blur" value="blur"><span>模糊化（悬停显示）</span></label>
       </div>
     </div>
+    <div class="opt-row">
+      <span class="opt-label">提示</span>
+      <div class="pill-group">
+        <label><input type="radio" name="hints" value="on" checked><span>开启回复提示</span></label>
+        <label><input type="radio" name="hints" value="off"><span>关闭</span></label>
+      </div>
+    </div>
   </div>
 
   <div class="controls">
@@ -629,6 +636,7 @@ document.addEventListener('click', () => { document.querySelectorAll('.custom-se
 function getSubMode() { return document.querySelector('input[name=sub]:checked').value; }
 function getBlurMode() { return document.querySelector('input[name=blur]:checked').value; }
 function getSpeed() { return parseFloat(document.querySelector('input[name=speed]:checked').value); }
+function getHintsEnabled() { return document.querySelector('input[name=hints]:checked').value === 'on'; }
 
 function applyDisplayMode() {
   const sub = getSubMode(), blur = getBlurMode();
@@ -639,6 +647,9 @@ function applyDisplayMode() {
 function applySpeed() { $('remote_audio').playbackRate = getSpeed(); }
 document.querySelectorAll('input[name=sub],input[name=blur]').forEach(r => r.addEventListener('change', applyDisplayMode));
 document.querySelectorAll('input[name=speed]').forEach(r => r.addEventListener('change', applySpeed));
+document.querySelectorAll('input[name=hints]').forEach(r => r.addEventListener('change', () => {
+  if (!getHintsEnabled()) suggestionsEl.style.display = 'none';
+}));
 applyDisplayMode();
 
 function getCurrentSettings() {
@@ -748,6 +759,7 @@ async function replayAudio(text, btn) {
 }
 
 async function fetchSuggestions() {
+  if (!getHintsEnabled()) { suggestionsEl.style.display = 'none'; return; }
   suggestionsEl.style.display = '';
   suggestionsEl.classList.add('loading');
   chipsEl.innerHTML = '';
