@@ -24,5 +24,5 @@ check() {
 }
 
 check funasr     10095 "$LOG_DIR/funasr_server.pid"     "http://127.0.0.1:10095/health"
-check cosyvoice  50000 "$LOG_DIR/cosyvoice_server.pid"  ""
+check cosyvoice  50000 "$LOG_DIR/cosyvoice_server.pid"  "http://127.0.0.1:50000/health"
 check pipecat    7860  "$LOG_DIR/pipecat_app.pid"       "https://127.0.0.1:7860/"
