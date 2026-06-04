@@ -101,9 +101,9 @@ async def inference_sft(tts_text: str = Form(), spk_id: str = Form()):
 
 @app.get("/inference_zero_shot")
 @app.post("/inference_zero_shot")
-async def inference_zero_shot(tts_text: str = Form(), prompt_text: str = Form(), prompt_wav: UploadFile = File()):
+async def inference_zero_shot(tts_text: str = Form(), prompt_text: str = Form(), prompt_wav: UploadFile = File(), speed: float = Form(1.0)):
     prompt_path = _spool_upload(prompt_wav)
-    model_output = cosyvoice.inference_zero_shot(tts_text, prompt_text, prompt_path)
+    model_output = cosyvoice.inference_zero_shot(tts_text, prompt_text, prompt_path, speed=speed)
     return StreamingResponse(_stream_and_cleanup(model_output, prompt_path))
 
 

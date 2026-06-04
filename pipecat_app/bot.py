@@ -515,17 +515,11 @@ class CosyVoice3TTSService(TTSService):
     """Stream raw int16 PCM (24kHz mono) from CosyVoice /inference_zero_shot."""
 
     def __init__(self, *, base_url: str, prompt_text: str, prompt_wav_path: str,
-                 sample_rate: int = 24000,
+                 sample_rate: int = 24000, speed: float = 1.0,
                  pc_id: str | None = None, tracer: Tracer | None = None,
                  **kw):
         super().__init__(
             sample_rate=sample_rate,
-            # Let the base class own the audio-context lifecycle. Without this,
-            # multi-sentence LLM replies cause the base class state machine and
-            # our manual create_audio_context/remove_audio_context calls to
-            # collide — the second sentence's audio is then dropped after a
-            # KeyError in _audio_context_task_handler. See pipecat docs in
-            # tts_service.tts_process_generator for the rule.
             push_start_frame=True,
             push_stop_frames=True,
             push_text_frames=True,
@@ -534,7 +528,7 @@ class CosyVoice3TTSService(TTSService):
         self._base_url = base_url.rstrip("/")
         self._prompt_text = prompt_text
         self._prompt_wav_path = prompt_wav_path
-        # Load prompt wav once into memory (it's small ~330KB).
+        self._speed = speed
         with open(prompt_wav_path, "rb") as f:
             self._prompt_bytes = f.read()
         self._session: aiohttp.ClientSession | None = None
@@ -576,6 +570,7 @@ class CosyVoice3TTSService(TTSService):
             filename="prompt.wav",
             content_type="audio/wav",
         )
+        data.add_field("speed", str(self._speed))
 
         t0 = time.monotonic()
         total_bytes = 0
@@ -651,7 +646,8 @@ async def run_bot(webrtc_connection: SmallWebRTCConnection,
                   voice_id: str | None = None,
                   vad_stop_secs: float | None = None,
                   speech_timeout: float | None = None,
-                  stt_language: str | None = None):
+                  stt_language: str | None = None,
+                  tts_speed: float | None = None):
     pc_id = webrtc_connection.pc_id
     logger.info(f"Starting bot pipeline pc_id={pc_id}")
     sp = (system_prompt or SYSTEM_PROMPT).strip() or SYSTEM_PROMPT
@@ -704,6 +700,7 @@ async def run_bot(webrtc_connection: SmallWebRTCConnection,
         base_url=COSYVOICE_URL,
         prompt_text=tts_prompt_text,
         prompt_wav_path=tts_wav,
+        speed=float(tts_speed if tts_speed is not None else 1.0),
         pc_id=pc_id, tracer=tracer,
     )
     llm = OpenAILLMService(
@@ -1669,7 +1666,7 @@ async def offer(request: dict, background_tasks: BackgroundTasks):
 
         background_tasks.add_task(run_bot, pipecat_connection, system_prompt, greeting, voice_id,
                                    request.get("vad_stop_secs"), request.get("speech_timeout"),
-                                   request.get("stt_language"))
+                                   request.get("stt_language"), request.get("tts_speed"))
 
     answer = pipecat_connection.get_answer()
     pcs_map[answer["pc_id"]] = pipecat_connection

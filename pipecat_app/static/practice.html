@@ -20,21 +20,31 @@ h3{font-size:13px;color:#64748b;margin:0 0 10px;font-weight:500}
 .header-subtitle{font-size:13px;color:#64748b;margin-top:2px}
 .header-actions{display:flex;gap:10px;flex-wrap:wrap}
 .header-actions button{padding:10px 20px;border:1px solid #e2e8f0;background:#fff;border-radius:10px;font-size:14px;cursor:pointer;color:#334155;font-weight:500;transition:all .15s;display:flex;align-items:center;gap:6px}
-.header-actions button:hover{background:#f1f5f9;border-color:#cbd5e1}
+.header-actions button:hover{background:#f8fafc;border-color:#2563eb;color:#2563eb}
 .header-actions button.primary,
-.header-actions button.active{background:#2563eb;color:#fff;border-color:#2563eb;box-shadow:0 2px 8px rgba(37,99,235,.25)}
+.header-actions button.active{background:#fff;color:#2563eb;border-color:#2563eb;box-shadow:none}
 .header-actions button.primary:hover,
-.header-actions button.active:hover{background:#1d4ed8;border-color:#1d4ed8}
+.header-actions button.active:hover{background:#eff6ff;border-color:#1d4ed8;color:#1d4ed8}
 
 /* Settings card */
 .settings{background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:28px;margin-bottom:24px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
 .settings h2{display:flex;align-items:center;gap:8px}
 .opt-row{display:flex;gap:16px;align-items:center;margin-bottom:20px;flex-wrap:wrap}
 .opt-row:last-child{margin-bottom:0}
-.opt-label{font-size:14px;color:#475569;font-weight:500;min-width:56px;display:flex;align-items:center;gap:6px}
-.opt-label .icon{font-size:16px;opacity:.7}
-.opt-row select{padding:10px 14px;border:1px solid #e2e8f0;border-radius:10px;font-size:14px;color:#334155;background:#fff;width:320px;max-width:100%;appearance:auto;cursor:pointer;transition:border-color .15s}
-.opt-row select:focus{outline:none;border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.1)}
+.opt-label{font-size:14px;color:#475569;font-weight:500;min-width:56px;width:56px;flex-shrink:0}
+.opt-row select{display:none}
+/* Custom dropdown */
+.custom-select{position:relative;width:320px;max-width:100%}
+.custom-select-trigger{padding:10px 14px;border:1px solid #e2e8f0;border-radius:10px;font-size:14px;color:#334155;background:#fff;cursor:pointer;transition:border-color .15s;display:flex;justify-content:space-between;align-items:center;user-select:none}
+.custom-select-trigger:hover{border-color:#cbd5e1}
+.custom-select-trigger::after{content:'▾';color:#94a3b8;font-size:12px;margin-left:8px}
+.custom-select.open .custom-select-trigger{border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.1);border-bottom-left-radius:0;border-bottom-right-radius:0}
+.custom-select-options{display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #2563eb;border-top:none;border-bottom-left-radius:10px;border-bottom-right-radius:10px;max-height:200px;overflow-y:auto;z-index:100;box-shadow:0 4px 12px rgba(0,0,0,.08)}
+.custom-select.open .custom-select-options{display:block}
+.custom-select-option{padding:10px 14px;font-size:14px;color:#334155;cursor:pointer;transition:background .1s}
+.custom-select-option:hover{background:#eff6ff}
+.custom-select-option:last-child{border-bottom-left-radius:10px;border-bottom-right-radius:10px}
+.custom-select-option.selected{color:#2563eb;font-weight:500;background:#f0f7ff}
 
 /* Radio as pill buttons */
 .pill-group{display:flex;gap:8px;flex-wrap:wrap}
@@ -141,8 +151,8 @@ audio{display:none}
     </div>
   </div>
   <div class="header-actions">
-    <button id="btn_view_setup" class="primary">▶ 开始对话</button>
-    <button id="btn_view_history" class="active">🕐 查看历史</button>
+    <button id="btn_view_setup">开始对话</button>
+    <button id="btn_view_history" class="active">查看历史</button>
   </div>
 </div>
 
@@ -160,15 +170,15 @@ audio{display:none}
   <div class="settings" id="settings_panel">
     <h2>⚙ 练习设置</h2>
     <div class="opt-row">
-      <span class="opt-label"><span class="icon">🖥</span> 场景</span>
+      <span class="opt-label">场景</span>
       <select id="scenario_select"><option value="">加载中...</option></select>
     </div>
     <div class="opt-row">
-      <span class="opt-label"><span class="icon">🔊</span> 音色</span>
+      <span class="opt-label">音色</span>
       <select id="voice_select"><option value="">加载中...</option></select>
     </div>
     <div class="opt-row">
-      <span class="opt-label"><span class="icon">🕐</span> 语速</span>
+      <span class="opt-label">语速</span>
       <div class="pill-group">
         <label><input type="radio" name="speed" value="0.5"><span>0.5x</span></label>
         <label><input type="radio" name="speed" value="1" checked><span>1.0x</span></label>
@@ -176,7 +186,7 @@ audio{display:none}
       </div>
     </div>
     <div class="opt-row">
-      <span class="opt-label"><span class="icon">💬</span> 字幕</span>
+      <span class="opt-label">字幕</span>
       <div class="pill-group">
         <label><input type="radio" name="sub" value="en-zh" checked><span>英文 + 中文</span></label>
         <label><input type="radio" name="sub" value="en"><span>仅英文</span></label>
@@ -184,7 +194,7 @@ audio{display:none}
       </div>
     </div>
     <div class="opt-row">
-      <span class="opt-label"><span class="icon">👁</span> 显示</span>
+      <span class="opt-label">显示</span>
       <div class="pill-group">
         <label><input type="radio" name="blur" value="show" checked><span>常驻显示</span></label>
         <label><input type="radio" name="blur" value="blur"><span>模糊化（悬停显示）</span></label>
@@ -193,7 +203,7 @@ audio{display:none}
   </div>
 
   <div class="controls">
-    <button class="btn-start" id="btn_start">▶ 开始对话</button>
+    <button class="btn-start" id="btn_start">▶ 开始</button>
     <button class="btn-stop" id="btn_stop" style="display:none">■ 结束会话并总结</button>
     <button class="btn-mute" id="btn_mute" style="display:none">🎤 静音</button>
   </div>
@@ -558,6 +568,63 @@ async function selectScenario(id) {
 scenarioSelect.addEventListener('change', () => selectScenario(scenarioSelect.value));
 loadScenarios();
 
+// --------------- Custom dropdown UI ---------------
+function wrapSelect(selectEl) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'custom-select';
+  selectEl.parentNode.insertBefore(wrapper, selectEl);
+  wrapper.appendChild(selectEl);
+
+  const trigger = document.createElement('div');
+  trigger.className = 'custom-select-trigger';
+  wrapper.appendChild(trigger);
+
+  const optionsDiv = document.createElement('div');
+  optionsDiv.className = 'custom-select-options';
+  wrapper.appendChild(optionsDiv);
+
+  function rebuild() {
+    const opts = Array.from(selectEl.options);
+    trigger.textContent = '';
+    const txt = document.createElement('span');
+    txt.textContent = selectEl.options[selectEl.selectedIndex] ? selectEl.options[selectEl.selectedIndex].textContent : '';
+    trigger.appendChild(txt);
+    optionsDiv.innerHTML = '';
+    opts.forEach((opt, i) => {
+      const div = document.createElement('div');
+      div.className = 'custom-select-option' + (i === selectEl.selectedIndex ? ' selected' : '');
+      div.textContent = opt.textContent;
+      div.onclick = (e) => {
+        e.stopPropagation();
+        selectEl.selectedIndex = i;
+        selectEl.dispatchEvent(new Event('change'));
+        wrapper.classList.remove('open');
+        rebuild();
+      };
+      optionsDiv.appendChild(div);
+    });
+  }
+
+  trigger.onclick = (e) => {
+    e.stopPropagation();
+    // close other open dropdowns
+    document.querySelectorAll('.custom-select.open').forEach(el => { if (el !== wrapper) el.classList.remove('open'); });
+    wrapper.classList.toggle('open');
+    if (wrapper.classList.contains('open')) rebuild();
+  };
+
+  // Watch for option changes (loaded async)
+  const observer = new MutationObserver(rebuild);
+  observer.observe(selectEl, { childList: true });
+  rebuild();
+}
+
+wrapSelect($('scenario_select'));
+wrapSelect($('voice_select'));
+
+// Close dropdowns on outside click
+document.addEventListener('click', () => { document.querySelectorAll('.custom-select.open').forEach(el => el.classList.remove('open')); });
+
 // --------------- Settings ---------------
 function getSubMode() { return document.querySelector('input[name=sub]:checked').value; }
 function getBlurMode() { return document.querySelector('input[name=blur]:checked').value; }
@@ -754,6 +821,7 @@ async function startSession() {
         vad_stop_secs: 2,
         speech_timeout: 1,
         stt_language: 'en',
+        tts_speed: getSpeed(),
       }),
     });
     if (!r.ok) throw new Error('信令失败');
