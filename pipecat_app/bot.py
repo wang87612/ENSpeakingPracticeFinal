@@ -124,7 +124,7 @@ CONFIG: dict[str, Any] = {
     #   越高 → 越严格，越不容易把噪音误判成说话（但小声说话可能被漏掉）。
     #   越低 → 越灵敏，弱声也算说话（但更容易被背景噪音触发）。
     #   范围 0.1~1.0，默认 0.5。
-    "vad_confidence":         float(os.environ.get("VAD_CONFIDENCE", "1")),
+    "vad_confidence":         float(os.environ.get("VAD_CONFIDENCE", "0.5")),
 
     # VAD 最小音量阈值：低于此音量的声音不算「说话」。
     #   越高 → 需要说得更大声才会被识别为说话，能挡掉环境底噪。
