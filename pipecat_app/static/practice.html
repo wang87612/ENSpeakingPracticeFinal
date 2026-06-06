@@ -254,6 +254,7 @@ audio{display:none}
   <div id="detail_transcript" class="transcript"></div>
   <div class="controls">
     <button id="btn_detail_back">← 返回历史记录</button>
+    <button id="btn_detail_resummarize" class="primary" style="background:#2563eb;color:#fff">🔄 重新总结</button>
   </div>
 </div>
 
@@ -268,6 +269,7 @@ const scenarioSelect = $('scenario_select');
 
 let currentScenario = null;
 let sessionStartTs = null;
+let currentDetailId = null;
 
 // --------------- Prompt debug logging ---------------
 // Pretty-print prompt blocks to the browser console so you can see exactly
@@ -348,6 +350,50 @@ $('btn_view_setup').onclick = () => {
 $('btn_view_history').onclick = () => showView('history');
 $('btn_back_to_history').onclick = () => showView('history');
 $('btn_detail_back').onclick = () => showView('history');
+
+// Re-run the summary for an existing session using the latest prompt/logic,
+// then persist the new summary back onto the same record.
+async function resummarizeDetail() {
+  if (!currentDetailId) return;
+  const all = JSON.parse(localStorage.getItem('practice_sessions') || '[]');
+  const idx = all.findIndex(x => x.id === currentDetailId);
+  if (idx < 0) return;
+  const s = all[idx];
+  const msgs = s.messages || [];
+  if (!msgs.length) {
+    alert('本次没有对话内容，无法重新总结。');
+    return;
+  }
+  const btn = $('btn_detail_resummarize');
+  const card = $('detail_summary_card');
+  btn.disabled = true;
+  const oldLabel = btn.textContent;
+  btn.textContent = '⏳ 正在重新总结...';
+  card.innerHTML = '<div class="summary-loading">正在重新生成总结，请稍候...</div>';
+  try {
+    const r = await fetch('/api/sessions', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ messages: msgs, settings: s.settings || {} }),
+    });
+    if (!r.ok) {
+      const txt = await r.text();
+      card.innerHTML = `<div class="summary-loading">重新总结失败：${txt || r.status}</div>`;
+      return;
+    }
+    const {summary} = await r.json();
+    s.summary = summary;
+    all[idx] = s;
+    localStorage.setItem('practice_sessions', JSON.stringify(all));
+    renderSummaryCard(card, summary);
+  } catch (e) {
+    card.innerHTML = `<div class="summary-loading">重新总结失败：${e.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = oldLabel;
+  }
+}
+$('btn_detail_resummarize').onclick = resummarizeDetail;
 
 // --------------- History list ---------------
 function fmtTime(iso) {
@@ -502,6 +548,7 @@ function renderDetailTranscript(messages) {
 
 function openDetail(id) {
   showView('detail');
+  currentDetailId = id;
   const all = JSON.parse(localStorage.getItem('practice_sessions') || '[]');
   const s = all.find(x => x.id === id);
   if (!s) {
