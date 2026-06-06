@@ -113,26 +113,58 @@ GREETING = _read_text(
 )
 
 
-# =============== Sensitivity knobs (env-tunable + runtime-tunable via /api/config) ===============
-# These follow Pipecat's official recommendations:
-#   - VAD stop_secs/start_secs are kept at defaults (0.2/0.2) because the
-#     official user-turn-stop strategies (SmartTurn/SpeechTimeout) are tuned
-#     against those values.
-#   - "Don't interrupt me on a single grunt while the bot is talking" is
-#     handled by MinWordsUserTurnStartStrategy, which only enforces the word
-#     threshold while the bot is speaking — outside of bot-speech, a single
-#     word still triggers (so the user can say "yes" / "stop" naturally).
+# =============== 灵敏度调参区（可用环境变量配置，也可通过 /api/config 运行时修改）===============
+# 说明：
+#   - 这一组参数控制「VAD 语音检测」和「打断/回合切换」的灵敏度。
+#   - 带 vad_ 前缀的参数在「建立会话时」读取，改完需要重连/新开会话才生效。
+#   - 其余过滤类参数（如 min_words_to_interrupt）通过 /api/config 修改后可即时生效。
+#   - 每个参数的取值范围见下方 CONFIG_BOUNDS。
 CONFIG: dict[str, Any] = {
-    "vad_confidence":         float(os.environ.get("VAD_CONFIDENCE", "0.5")),
+    # VAD 置信度阈值：Silero VAD 判定「这是人声」的最低置信度。
+    #   越高 → 越严格，越不容易把噪音误判成说话（但小声说话可能被漏掉）。
+    #   越低 → 越灵敏，弱声也算说话（但更容易被背景噪音触发）。
+    #   范围 0.1~1.0，默认 0.5。
+    "vad_confidence":         float(os.environ.get("VAD_CONFIDENCE", "1")),
+
+    # VAD 最小音量阈值：低于此音量的声音不算「说话」。
+    #   越高 → 需要说得更大声才会被识别为说话，能挡掉环境底噪。
+    #   越低 → 小声也能触发，但容易被环境噪音误触。
+    #   范围 0.0~1.0，默认 0.3。
     "vad_min_volume":         float(os.environ.get("VAD_MIN_VOLUME", "0.3")),
-    "vad_stop_secs":          float(os.environ.get("VAD_STOP_SECS", "0.8")),
+
+    # VAD「开始说话」确认时长（秒）：用户必须持续说满这么久，VAD 才确认
+    # 「用户开口了」并发出打断信号。这是决定「打断快不快」的关键参数。
+    #   越小 → 一开口就打断，反应快（但咳嗽/语气词更容易误打断机器人）。
+    #   越大 → 要稳定说一会儿才打断，更抗噪（但感觉「打断慢」）。
+    #   范围 0.1~2.0，默认 0.3。（原为 1.0，会感觉打断明显延迟）
+    "vad_start_secs":         float(os.environ.get("VAD_START_SECS", "0.3")),
+
+    # VAD「停止说话」确认时长（秒）：用户停顿多久后，VAD 才认为「这句说完了」。
+    #   越小 → 一停就立刻收尾，反应快（但说话中途的短停顿可能被误判成说完）。
+    #   越大 → 允许更长停顿仍算同一句，适合慢节奏说话（但收尾感觉拖沓）。
+    #   范围 0.2~5.0，默认 0.8。
+    "vad_stop_secs":          float(os.environ.get("VAD_STOP_SECS", "1")),
+
+    # 回合结束超时（秒）：用户停止说话后，等待这么久没有新语音就判定「该轮到机器人回应了」。
+    #   越小 → 用户一停机器人就抢着回应，对话节奏快（但用户思考性停顿时容易被抢话）。
+    #   越大 → 给用户更多停顿思考的时间（但机器人回应会显得迟钝）。
+    #   范围 0.3~10.0，默认 1.0。
     "speech_timeout":         float(os.environ.get("SPEECH_TIMEOUT", "1.0")),
-    "min_words_to_interrupt": int(os.environ.get("MIN_WORDS_TO_INTERRUPT", "3")),
+
+    # 打断所需最少词数：仅在「机器人正在说话」时生效，用户要说够这么多词才会打断机器人。
+    #   作用是挡掉「嗯」「啊」「yeah」这类单个语气词造成的误打断。
+    #   =1 → 蹦一个词就能打断，最灵敏（但最容易被语气词误触）。
+    #   =2~3 → 需要说出几个词才打断，能过滤掉无意识的附和音（推荐 2）。
+    #   注意：机器人没在说话时，单个词也能正常触发，不受此限制。
+    #   范围 1~20，默认 2。
+    "min_words_to_interrupt": int(os.environ.get("MIN_WORDS_TO_INTERRUPT", "2")),
 }
 
+# 各参数的合法取值范围（下限, 上限）。/api/config 修改时会据此做边界校验。
 CONFIG_BOUNDS: dict[str, tuple[float, float]] = {
     "vad_confidence":         (0.1, 1.0),
     "vad_min_volume":         (0.0, 1.0),
+    "vad_start_secs":         (0.1, 2.0),
     "vad_stop_secs":          (0.2, 5.0),
     "speech_timeout":         (0.3, 10.0),
     "min_words_to_interrupt": (1, 20),
@@ -674,16 +706,15 @@ async def run_bot(webrtc_connection: SmallWebRTCConnection,
             audio_out_sample_rate=24000,   # match CosyVoice output
             # Per Pipecat docs: VAD start_secs controls how long the user
             # must sustain speech before VAD confirms "speaking started" and
-            # emits VADUserStartedSpeakingFrame. We set it to 1.0s so brief
-            # noises / back-channel sounds don't interrupt the bot, but
-            # sustained speech (1+ second) reliably triggers interruption.
-            # NOTE: This is higher than the default 0.2s. Quick utterances
-            # like "yes"/"no" won't interrupt while bot is speaking, which
-            # is acceptable for this practice scenario.
+            # emits VADUserStartedSpeakingFrame. Lowered to 0.3s so the user
+            # can interrupt the bot almost immediately on speaking. The
+            # trade-off is higher sensitivity to brief noises / back-channel
+            # sounds; if false interruptions become a problem, raise this back
+            # toward 0.5-1.0s (tunable via VAD_START_SECS env var).
             vad_analyzer=SileroVADAnalyzer(
                 params=VADParams(
                     confidence=float(CONFIG["vad_confidence"]),
-                    start_secs=1.0,
+                    start_secs=float(CONFIG["vad_start_secs"]),
                     stop_secs=float(vad_stop_secs if vad_stop_secs is not None else CONFIG["vad_stop_secs"]),
                     min_volume=float(CONFIG["vad_min_volume"]),
                 ),
